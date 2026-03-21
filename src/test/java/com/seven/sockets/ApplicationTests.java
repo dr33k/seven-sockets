@@ -1,4 +1,4 @@
-package com.seven.seven_sockets;
+package com.seven.sockets;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;

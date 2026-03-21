@@ -1,0 +1,37 @@
+type Subscription{
+    newMsgs:[Msg!]
+    presenceStatusStream(acctId: ID!):[PresenceStatus!]
+}
+
+type Query{
+    readMsg(id: ID!):Msg
+}
+
+type Mutation{
+    heartbeat: Boolean,
+    sendMsg(content: String, to: String!, object: [String]!): Msg
+}
+
+type Acct{
+    id: ID!
+    firstName: String!
+    lastName: String!
+    phoneNo: String!
+    email: String!
+}
+
+type PresenceStatus{
+    isOnline: Boolean!
+    lastSeen: String!
+}
+
+type Msg{
+    id: ID!
+    content: String!
+    objects: [String]!
+    from: Acct!
+    to: Acct!
+    sentTms: String!
+    deliveryTms: String
+    receiptTms: String
+}

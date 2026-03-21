@@ -1,4 +1,4 @@
-package com.seven.seven_sockets;
+package com.seven.sockets;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;

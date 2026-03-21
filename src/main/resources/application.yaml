@@ -1,0 +1,30 @@
+spring:
+  cloud:
+    compatibility-verifier:
+      enabled: false
+  kafka:
+    bootstrap-servers: localhost:9092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      # High-performance settings
+      acks: 1 # Faster than 'all', good enough for presence
+      properties:
+        linger.ms: 5 # Wait 5ms to batch messages (huge performance win)
+        compression.type: lz4 # Best balance of speed/compression for Java 25
+    consumer:
+      group-id: presence-service-group
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: ["com.seven.auth.*", "com.seven.sockets.*"]
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      # Using Lettuce (default in Spring) for non-blocking I/O
+      lettuce:
+        pool:
+          max-active: 100 # Adjust based on your 20k user load tests
