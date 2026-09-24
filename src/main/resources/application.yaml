@@ -13,7 +13,7 @@ spring:
         linger.ms: 5 # Wait 5ms to batch messages
         compression.type: lz4 # Best balance of speed/compression for Java 25
     consumer:
-      group-id: presence-service-group
+      group-id: presence-persistence-group
       auto-offset-reset: earliest
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer

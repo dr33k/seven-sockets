@@ -8,8 +8,6 @@ import reactor.core.publisher.Mono;
 import java.time.Instant;
 import java.time.ZonedDateTime;
 
-import static com.seven.sockets.util.Constants.*;
-
 @Service
 public class PresenceService {
 
