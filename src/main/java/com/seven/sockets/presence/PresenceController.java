@@ -20,7 +20,7 @@ public class PresenceController {
 
     @MutationMapping
     public Mono<Void> heartbeat(@AuthenticationPrincipal IAccount.Record principal) {
-        return presenceSvc.updateLastSeen(principal.id());
+        return presenceSvc.updateLastSeen(principal.id().toString());
     }
 
     @SubscriptionMapping
