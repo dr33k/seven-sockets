@@ -72,7 +72,7 @@
         </dependency>
         <dependency>
             <groupId>com.seven.auth</groupId>
-            <artifactId>oauth2-adapter</artifactId>
+            <artifactId>oauth2-reactive-adapter</artifactId>
             <version>1.0-SNAPSHOT</version>
         </dependency>
         <dependency>
