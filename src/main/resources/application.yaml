@@ -10,7 +10,7 @@ spring:
       # High-performance settings
       acks: 1 # Faster than 'all', good enough for presence
       properties:
-        linger.ms: 5 # Wait 5ms to batch messages (huge performance win)
+        linger.ms: 5 # Wait 5ms to batch messages
         compression.type: lz4 # Best balance of speed/compression for Java 25
     consumer:
       group-id: presence-service-group
@@ -27,4 +27,4 @@ spring:
       # Using Lettuce (default in Spring) for non-blocking I/O
       lettuce:
         pool:
-          max-active: 100 # Adjust based on your 20k user load tests
+          max-active: 100

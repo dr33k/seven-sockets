@@ -21,7 +21,6 @@ type Acct{
 }
 
 type PresenceStatus{
-    isOnline: Boolean!
     lastSeen: String!
 }
 

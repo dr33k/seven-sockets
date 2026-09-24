@@ -17,12 +17,12 @@ public class BaseConfig {
 
     @Bean
     public ReactiveRedisTemplate<String, String> redisTmpl(ReactiveRedisConnectionFactory factory){
-        RedisSerializer<String> srlzr = new StringRedisSerializer();
+        RedisSerializer<String> stringRedisSerializer = new StringRedisSerializer();
         RedisSerializationContext<String, String> ctxt = RedisSerializationContext
-                .<String, String>newSerializationContext(srlzr)
-                .value(srlzr)
-                .hashKey(srlzr)
-                .hashValue(srlzr)
+                .<String, String>newSerializationContext(stringRedisSerializer)
+                .value(stringRedisSerializer)
+                .hashKey(stringRedisSerializer)
+                .hashValue(stringRedisSerializer)
                 .build();
         return new ReactiveRedisTemplate<>(factory, ctxt);
 
