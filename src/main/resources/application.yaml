@@ -2,6 +2,8 @@ spring:
   cloud:
     compatibility-verifier:
       enabled: false
+
+  #KAFKA CONFIG
   kafka:
     bootstrap-servers: localhost:9092
     producer:
@@ -20,6 +22,7 @@ spring:
       properties:
         spring.json.trusted.packages: ["com.seven.auth.*", "com.seven.sockets.*"]
 
+  #REDIS CONFIG
   data:
     redis:
       host: localhost
@@ -28,3 +31,20 @@ spring:
       lettuce:
         pool:
           max-active: 100
+
+  #DATASOURCE CONFIG FOR FLYWAY
+  datasource:
+    username: ${PG_USER:postgres}
+    password: ${PG_PASSWORD:root}
+    url: jdbc:postgresql://localhost:${PG_PORT:5432}/acct_profile_db
+    hikari:
+      auto-commit: false
+
+  #DATASOURCE CONFIG FOR R2DBC
+  r2dbc:
+    username: ${PG_USER:postgres}
+    password: ${PG_PASSWORD:root}
+    url: r2dbc:postgresql://localhost:${PG_PORT:5432}/acct_profile_db
+    pool:
+      initial-size: 10
+      max-size: 30
