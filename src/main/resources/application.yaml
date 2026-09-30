@@ -1,4 +1,8 @@
 spring:
+  graphql:
+    graphiql:
+      enabled: true
+      path: /graphiql
   cloud:
     compatibility-verifier:
       enabled: false
