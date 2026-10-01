@@ -1,6 +1,6 @@
 type Subscription{
-    newMsgs:[Msg!]
-    presenceStatusStream(acctId: ID!):[PresenceStatus!]
+    newMsgs:Msg!
+    presenceStatusStream(acctId: ID!):PresenceStatus!
 }
 
 type Query{
@@ -8,7 +8,7 @@ type Query{
 }
 
 type Mutation{
-    heartbeat: Boolean,
+    heartbeat: Boolean
     sendMsg(content: String, to: String!, object: [String]!): Msg
 }
 

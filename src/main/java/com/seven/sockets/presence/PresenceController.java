@@ -1,6 +1,7 @@
 package com.seven.sockets.presence;
 
 import com.seven.auth.account.AccountDTO;
+import com.seven.auth.client.authorization.Authorize;
 import org.springframework.graphql.data.method.annotation.MutationMapping;
 import org.springframework.graphql.data.method.annotation.SubscriptionMapping;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -19,6 +20,7 @@ public class PresenceController {
     }
 
     @MutationMapping
+    @Authorize
     public Mono<Void> heartbeat(@AuthenticationPrincipal AccountDTO.Record principal) {
         return presenceSvc.updateLastSeen(principal.id().toString()).then();
     }

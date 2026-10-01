@@ -16,7 +16,7 @@ import java.util.UUID;
 @Component
 @Slf4j
 @RequiredArgsConstructor
-public class PresenceStatusEventConsumer {
+public class PresenceStatusEventListener {
     private final LastSeenRepository lastSeenRepository;
 
     @KafkaListener(
