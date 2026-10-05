@@ -60,4 +60,4 @@ app:
       - "/vendor/**"
       - "/graphql"
     jwt:
-      secret:
+      secret: ${JWT_SECRET_KEY:secret}
