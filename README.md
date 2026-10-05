@@ -2,6 +2,8 @@
 
 Reactive Chat application built with Spring Webflux/Project Reactor.
 
+Uses Seven ID modules for Authentication, Authorization and Accounting/Audit.
+
 Uses GraphQL API for lighter exchange payloads. Kafka Event Queue for asynchronous writes and Redis Store for fast reads.
 
 Functionalities to be provided:
