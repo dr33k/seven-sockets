@@ -40,7 +40,7 @@ spring:
   datasource:
     username: ${PG_USER:postgres}
     password: ${PG_PASSWORD:root}
-    url: jdbc:postgresql://localhost:${PG_PORT:5432}/acct_profile_db
+    url: ${JDBC_DATASOURCE_URL:jdbc:postgresql://localhost:${PG_PORT:5432}/acct_profile_db}
     hikari:
       auto-commit: false
 
@@ -48,16 +48,13 @@ spring:
   r2dbc:
     username: ${PG_USER:postgres}
     password: ${PG_PASSWORD:root}
-    url: r2dbc:postgresql://localhost:${PG_PORT:5432}/acct_profile_db
+    url: ${R2DBC_DATASOURCE_URL:r2dbc:postgresql://localhost:${PG_PORT:5432}/acct_profile_db}
     pool:
       initial-size: 10
       max-size: 30
 
 app:
   auth:
-    permitted-paths:
-      - "/graphiql/**"
-      - "/vendor/**"
-      - "/graphql"
+    permitted-paths: "/graphiql/**,/vendor/**,/graphql"
     jwt:
       secret: ${JWT_SECRET_KEY:secret}
