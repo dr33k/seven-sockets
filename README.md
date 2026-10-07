@@ -18,7 +18,7 @@ Functionalities to be provided:
 
 ## Requirements
 
-Java version: 21+
+Java version: 25+
 
 Maven version: 3.9.6+
 
@@ -32,6 +32,8 @@ Env:
 
 
 ## Run application
+Make sure a postgresql 14+ server is running.
+
 
 In project root folder
     
