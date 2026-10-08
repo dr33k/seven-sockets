@@ -1,5 +1,6 @@
 package com.seven.sockets.presence;
 
+import com.seven.sockets.presence.serializable.PresenceStatus;
 import org.springframework.data.redis.core.ReactiveRedisTemplate;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;

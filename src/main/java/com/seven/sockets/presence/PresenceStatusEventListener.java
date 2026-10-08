@@ -1,6 +1,7 @@
 package com.seven.sockets.presence;
 
 import com.seven.sockets.acct_profile.repos.LastSeenRepository;
+import com.seven.sockets.presence.serializable.PresenceStatus;
 import com.seven.sockets.presence.util.Constants;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
