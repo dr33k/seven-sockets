@@ -8,12 +8,12 @@ Uses GraphQL API for lighter exchange payloads. Kafka Event Queue for asynchrono
 
 Functionalities to be provided:
 
+* User authentication with Seven ID: **DONE**
 * User presence and Last Seen records: **IN PROGRESS**
-* User authentication with Seven ID: **TODO**
-* Sending and receiving of private messages: **TODO**
-* Sending and receiving of group messages: **TODO**
-* Private calls: **TODO**
-* Group calls: **TODO**
+* Sending and receiving of private messages: TODO
+* Sending and receiving of group messages: TODO
+* Private calls: TODO
+* Group calls: TODO
 
 
 ## Requirements
