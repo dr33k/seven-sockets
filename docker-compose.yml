@@ -1,0 +1,87 @@
+services:
+  redis:
+    image: redis/redis-stack:latest
+    container_name: redis-cache
+    ports:
+      - "6379:6379"   # Redis Port
+      - "8001:8001"   # RedisInsight GUI Port
+    environment:
+      - REDIS_ARGS=--save 60 1  # Snapshot every 60s if 1 key changes
+    volumes:
+      - ./redis_data:/data
+
+  kafka:
+    image: apache/kafka:latest
+    container_name: kafka
+    ports:
+      - "9092:9092"
+    environment:
+      # KRaft Configuration
+      - KAFKA_NODE_ID=1
+      - KAFKA_PROCESS_ROLES=broker,controller
+      - KAFKA_CONTROLLER_QUORUM_VOTERS=1@kafka:9093
+
+      - KAFKA_LISTENERS=INTERNAL://0.0.0.0:29092,EXTERNAL://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      - KAFKA_ADVERTISED_LISTENERS=INTERNAL://kafka:29092,EXTERNAL://localhost:9092
+      - KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      - KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_INTER_BROKER_LISTENER_NAME=INTERNAL
+      # Initial Cluster ID (Required for KRaft)
+      - KAFKA_CLUSTER_ID=kafka-sockets-cluster
+      # Kafka cluster setup
+      - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
+      - KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS=0
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    ports:
+      - "8085:8080"
+    environment:
+      - KAFKA_CLUSTERS_0_NAME=local
+      - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka:29092
+      - DYNAMIC_CONFIG_ENABLED=true
+    depends_on:
+      - kafka
+
+  acct-profile-db-postgres:
+    image: postgres:16-alpine
+    container_name: acct-profile-db-postgres
+    environment:
+      POSTGRES_DB: acct_profile_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: root
+    ports:
+      - "5430:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - sockets-app-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d acct_profile_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+#  sockets_app:
+#    image: seven-sockets:latest
+#    container_name: seven-sockets
+#    depends_on:
+#      acct-profile-db-postgres:
+#        condition: service_healthy
+#    ports:
+#      - "8080:8080"
+#    networks:
+#      - sockets-app-net
+#    environment:
+#      JDBC_DATASOURCE_URL: jdbc:postgresql://acct-profile-db-postgres:5432/acct_profile_db
+#      R2DBC_DATASOURCE_URL: r2dbc:postgresql://acct-profile-db-postgres:5432/acct_profile_db
+
+networks:
+  sockets-app-net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis-data:
+    driver: local
