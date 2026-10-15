@@ -1,12 +1,21 @@
 package main
 
 import (
+	"log"
+
 	"github.com/gin-gonic/gin"
-	"seven.com/sockets/presence"
 	"seven.com/sockets/auth"
+	"seven.com/sockets/db"
+	"seven.com/sockets/presence"
 )
 
 func main(){
+	//Init Redis
+	if err := db.InitRedis(); err != nil{
+		log.Fatalf("Redis Initialization Error: %v", err)
+	}
+
+	//Init Gin Router
 	router := gin.Default()
 
 	//Protect API
