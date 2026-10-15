@@ -4,20 +4,20 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
 
 	"github.com/redis/go-redis/v9"
+	"seven.com/sockets/config"
 )
 
 
 var RedisClient *redis.Client
 
 func InitRedis() error{
-	redisAddr := os.Getenv("REDIS_ADDR")
+	redisAddr := config.RedisAddr
 	if redisAddr == ""{
 		redisAddr = "localhost:6379"
 	}
-	redisPass := os.Getenv("REDIS_PASSWORD")
+	redisPass := config.RedisPassword
 	redisDB := 0
 
 	RedisClient = redis.NewClient(&redis.Options{

@@ -2,14 +2,13 @@ package auth
 
 import (
 	"net/http"
-	"os"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"seven.com/sockets/config"
 )
 
-var jwtSecret = os.Getenv("JWT_SECRET_KEY")
 
 func JwtMW() gin.HandlerFunc{
 	return func(ctx *gin.Context) {
@@ -33,11 +32,11 @@ func JwtMW() gin.HandlerFunc{
 		tokenString := tokens[1]
 
 		//Parse and validate token
-		token, err := jwt.Parse(tokenString, func(t *jwt.Token) (any, error) {
+		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (any, error) {
 			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok{
 				return nil, jwt.ErrSignatureInvalid
 			}
-			return jwtSecret, nil
+			return config.JwtSecretKey, nil
 		})
 
 		if err != nil || !token.Valid{
@@ -56,6 +55,7 @@ func JwtMW() gin.HandlerFunc{
 
 		ctx.Set("tenant", claims["tenant"])
 		ctx.Set("acct", claims["principal"])
+		ctx.Set("acct_id", claims["pincipal.id"])
 
 		//Next Handler
 		ctx.Next()
