@@ -14,9 +14,6 @@ var RedisClient *redis.Client
 
 func InitRedis() error{
 	redisAddr := config.RedisAddr
-	if redisAddr == ""{
-		redisAddr = "localhost:6379"
-	}
 	redisPass := config.RedisPassword
 	redisDB := 0
 

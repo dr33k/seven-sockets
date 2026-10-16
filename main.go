@@ -5,13 +5,17 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"seven.com/sockets/auth"
+	"seven.com/sockets/config"
 	"seven.com/sockets/db"
 	"seven.com/sockets/presence"
 )
 
-func main(){
+func main() {
+	//Init Config
+	config.InitEnv()
+
 	//Init Redis
-	if err := db.InitRedis(); err != nil{
+	if err := db.InitRedis(); err != nil {
 		log.Fatalf("Redis Initialization Error: %v", err)
 	}
 
