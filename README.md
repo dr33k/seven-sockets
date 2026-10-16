@@ -12,7 +12,7 @@ Uses REST API, Kafka Event Queue for asynchronous writes and Redis Store for fas
 
 Functionalities to be provided:
 
-* User authentication with Seven ID: **IN PROGRESS**
+* User authentication with Seven ID: **DONE**
 * User presence and Last Seen records: **IN PROGRESS**
 * Sending and receiving of private messages: TODO
 * Sending and receiving of group messages: TODO
