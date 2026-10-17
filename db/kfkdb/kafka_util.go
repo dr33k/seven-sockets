@@ -8,12 +8,8 @@ import (
 	"github.com/segmentio/kafka-go"
 )
 
-type PresenceEvent struct {
-	AcctId    string `json:"acct_id"`
-	Timestamp int64  `json:"timestamp"`
-}
 
-func PubEvent(ctx context.Context, topic string, event PresenceEvent) error {
+func PubEvent(ctx context.Context, topic string, event Event) error {
 	//Serialize into JSON
 	payloadBytes, err := json.Marshal(event)
 	if err != nil {

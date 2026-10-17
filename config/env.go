@@ -1,13 +1,16 @@
 package config
 
 import "os"
-
+var ServerPort = os.Getenv("SOCKETS_SERVER_PORT")
 var JwtSecretKey = os.Getenv("JWT_SECRET_KEY")
 var RedisPassword = os.Getenv("REDIS_PASSWORD")
 var RedisAddr = os.Getenv("REDIS_ADDR")
 var KafkaBrokerAddr = os.Getenv("KAFKA_BROKER_ADDR")
 
 func InitEnv() {
+	if ServerPort == ""{
+		ServerPort = "8080"
+	}
 	if JwtSecretKey == "" {
 		JwtSecretKey = "test_weak_jwt_signing_key00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
 	}

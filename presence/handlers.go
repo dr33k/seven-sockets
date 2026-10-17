@@ -14,7 +14,7 @@ import (
 	"seven.com/sockets/db/rdsdb"
 )
 
-var PersistHb = func(c *gin.Context) {
+var LogPresence = func(c *gin.Context) {
 
 	//Retrieve Auth Context
 	authCtx, err := auth.GetAuthCtx(c)
@@ -29,8 +29,8 @@ var PersistHb = func(c *gin.Context) {
 	//Publish Kafka Presence event if the account has no cache-recorded heartbeat or if it has been a minute since its last heartbeat
 	acctScore := rdsdb.RedisClient.ZScore(rctx, config.REDIS_PRESENCE_KEY, acctIdStr)
 	if acctScore == nil || now-acctScore.Val() > 60 {
-		kfkdb.PubEvent(rctx, config.KAFKA_PRESENCE_TOPIC, kfkdb.PresenceEvent{
-			AcctId:    acctIdStr,
+		kfkdb.PubEvent(rctx, config.KAFKA_PRESENCE_TOPIC, kfkdb.Event{
+			AcctID:    acctIdStr,
 			Timestamp: int64(now),
 		})
 	}
@@ -60,4 +60,18 @@ var PersistHb = func(c *gin.Context) {
 
 	log.Printf("Heartbeat from %v with id %v", authCtx.Account.Fname, acctIdStr)
 	c.JSON(http.StatusOK, nil)
+}
+
+func PersistPresence(event kfkdb.Event)error{
+	log.Printf("Processing presence event [%s] from user %s", event.Type, event.AcctID)
+
+	switch event.Type{
+		case "HEARTBEAT":{
+
+		}
+		default: {
+			log.Printf("Unknown event type: %s", event.Type)
+		}
+	}
+	return nil
 }
