@@ -6,7 +6,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"seven.com/sockets/auth"
 	"seven.com/sockets/config"
-	"seven.com/sockets/db"
+	"seven.com/sockets/db/rdsdb"
+	"seven.com/sockets/db/kfkdb"
 	"seven.com/sockets/presence"
 )
 
@@ -15,9 +16,13 @@ func main() {
 	config.InitEnv()
 
 	//Init Redis
-	if err := db.InitRedis(); err != nil {
+	if err := rdsdb.InitRedis(); err != nil {
 		log.Fatalf("Redis Initialization Error: %v", err)
 	}
+
+	//Init Kafka
+	kfkdb.InitKafkaProd()
+	defer kfkdb.CloseKafkaProd()
 
 	//Init Gin Router
 	router := gin.Default()

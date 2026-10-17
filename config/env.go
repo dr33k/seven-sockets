@@ -2,9 +2,10 @@ package config
 
 import "os"
 
-var JwtSecretKey string = os.Getenv("JWT_SECRET_KEY")
+var JwtSecretKey = os.Getenv("JWT_SECRET_KEY")
 var RedisPassword = os.Getenv("REDIS_PASSWORD")
 var RedisAddr = os.Getenv("REDIS_ADDR")
+var KafkaBrokerAddr = os.Getenv("KAFKA_BROKER_ADDR")
 
 func InitEnv() {
 	if JwtSecretKey == "" {
@@ -12,5 +13,8 @@ func InitEnv() {
 	}
 	if RedisAddr == "" {
 		RedisAddr = "localhost:6379"
+	}
+	if KafkaBrokerAddr == ""{
+		KafkaBrokerAddr = "localhost:9092"
 	}
 }
