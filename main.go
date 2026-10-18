@@ -31,23 +31,21 @@ func main() {
 	kfkdb.InitKafkaProd()
 	defer kfkdb.CloseKafkaProd()
 
-	//Cancellable context with timeout for Kafka consumer and other bg processes
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+
+	cancelCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	//Kafka Consumer goroutine
+	//Kafka presence Consumer goroutine
 	go func(){
-		kfkdb.StartKafkaConsumer(ctx, config.KAFKA_PRESENCE_TOPIC, config.KAFKA_PRESENCE_GROUP, presence.PersistPresence)
+		kfkdb.StartKafkaConsumer(cancelCtx, config.KAFKA_PRESENCE_TOPIC, config.KAFKA_PRESENCE_GROUP, presence.PersistPresence)
+	}()
+	//Kafka presence dlt Consumer goroutine
+	go func(){
+		kfkdb.StartKafkaConsumer(cancelCtx, config.KAFKA_PRESENCE_DLT_TOPIC, config.KAFKA_PRESENCE_GROUP, nil)
 	}()
 
 	//Init Gin Router
 	router := gin.Default()
-
-	//Wrap in HTTP server
-	srvr := http.Server{
-		Addr: fmt.Sprintf(":%s", config.ServerPort),
-		Handler: router,
-	}
 
 	//Protect API
 	protected := router.Group("/api")
@@ -56,20 +54,31 @@ func main() {
 		protected.POST("/heartbeat", presence.LogPresence)
 	}
 
+	//Wrap in HTTP server
+	srvr := http.Server{
+		Addr: fmt.Sprintf(":%s", config.ServerPort),
+		Handler: router,
+	}
+
 	//Http Server goroutine
 	go func(){
-		if err:= srvr.ListenAndServe(); err != nil{
+		log.Printf("Starting server on port %v", config.ServerPort)
+		if err:= srvr.ListenAndServe(); err != nil && err != http.ErrServerClosed{
 			log.Fatalf("Could not start server: %v", err)
 		}
-		log.Printf("Server successfully started on port %v", config.ServerPort)
 	}()
-
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGTERM, syscall.SIGINT)
 	<- sigChan
 
-	if err:= srvr.Shutdown(ctx); err != nil{
+	cancel()
+
+	//Cancellable context with timeout shutdown of bg processes
+	timeoutCtx, timeoutCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer timeoutCancel()
+
+	if err:= srvr.Shutdown(timeoutCtx); err != nil{
 		log.Printf("Server Force Shutdown: %v", err)
 	}
 	log.Println("Gracefully terminated server")

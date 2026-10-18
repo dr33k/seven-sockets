@@ -30,6 +30,7 @@ var LogPresence = func(c *gin.Context) {
 	acctScore := rdsdb.RedisClient.ZScore(rctx, config.REDIS_PRESENCE_KEY, acctIdStr)
 	if acctScore == nil || now-acctScore.Val() > 60 {
 		kfkdb.PubEvent(rctx, config.KAFKA_PRESENCE_TOPIC, kfkdb.Event{
+			Type: "HEARTBEAT",
 			AcctID:    acctIdStr,
 			Timestamp: int64(now),
 		})
@@ -67,7 +68,7 @@ func PersistPresence(event kfkdb.Event)error{
 
 	switch event.Type{
 		case "HEARTBEAT":{
-
+			log.Println("Ready to persist heartbeat to db")
 		}
 		default: {
 			log.Printf("Unknown event type: %s", event.Type)

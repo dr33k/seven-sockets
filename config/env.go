@@ -6,6 +6,8 @@ var JwtSecretKey = os.Getenv("JWT_SECRET_KEY")
 var RedisPassword = os.Getenv("REDIS_PASSWORD")
 var RedisAddr = os.Getenv("REDIS_ADDR")
 var KafkaBrokerAddr = os.Getenv("KAFKA_BROKER_ADDR")
+var KafkaMaxRetries = 3
+var KafkaBackoffMillis = 500
 
 func InitEnv() {
 	if ServerPort == ""{

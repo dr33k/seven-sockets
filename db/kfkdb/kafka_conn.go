@@ -3,6 +3,7 @@ package kfkdb
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"time"
 
@@ -72,6 +73,7 @@ func StartKafkaConsumer(ctx context.Context, topic string, groupID string, handl
 			}
 			continue
 		}
+		log.Printf("New event for %s topic, groupID: %s", topic, groupID)
 
 		//Unmarshal message into PresenceEvent
 		var event Event
@@ -82,16 +84,63 @@ func StartKafkaConsumer(ctx context.Context, topic string, groupID string, handl
 			continue
 		}
 
-		//Execute Handler function
-		if err := handler(event); err != nil{
-			log.Printf("Error handling event: %v", err)
-			//Handle retry logic
+		//Execute Handler function with retry loop
+
+		//DLT topics have nil handlers
+		if handler == nil{
+			if err := reader.CommitMessages(ctx, msg); err != nil {
+				log.Printf("Failed to commit DLT message offset: %v", err)
+			}
 			continue
 		}
 
-		//Commit the message offset after successful processing
-		if err:= reader.CommitMessages(ctx, msg); err != nil{
-			log.Printf("Failed to commit message offset: %v", err)
+		var handlerErr error
+		success := false
+
+		//Execute Handler
+		for attempts:=1;attempts <= config.KafkaMaxRetries;attempts++{
+			handlerErr = handler(event)
+			if handlerErr == nil{
+				success = true
+				break
+			}
+
+			log.Printf("Retry attempt %v handler error : %v" ,attempts, handlerErr)
+
+			if attempts < config.KafkaMaxRetries{
+				backoff := time.Duration( 1<<(attempts-1) * time.Duration(config.KafkaBackoffMillis) * time.Millisecond)
+				time.Sleep(backoff)
+			}
 		}
+
+		// Post-Retry 
+		if success{
+			log.Printf("[%s] event execution success", event.Type)
+
+			//Commit the message offset after successful processing
+			if err:= reader.CommitMessages(ctx, msg); err != nil{
+				log.Printf("Failed to commit message offset: %v", err)
+			}
+		} else{
+			log.Printf("Handler execution for event %+v failed after %v attempts, publishing to DLT",event, config.KafkaMaxRetries)
+
+			dlTopic:= fmt.Sprintf("%s-dlt", topic)
+			err := KafkaWriter.WriteMessages(ctx, kafka.Message{
+				Topic: dlTopic,
+				Value: msg.Value,
+			})
+
+			if err != nil {
+				log.Printf("CRITICAL: Failed to write message to DLT %s: %v", dlTopic, err)
+			} else {
+				// Successfully sent to DLT, commit the original message offset so main consumer moves on
+				if err := reader.CommitMessages(ctx, msg); err != nil {
+					log.Printf("Failed to commit original message offset after DLT routing: %v", err)
+				}
+			}
+		}
+
+
+
 	}
 }
