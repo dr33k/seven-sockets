@@ -1,6 +1,7 @@
 package presence
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -11,10 +12,11 @@ import (
 	"seven.com/sockets/auth"
 	"seven.com/sockets/config"
 	"seven.com/sockets/db/kfkdb"
+	"seven.com/sockets/db/pgdb"
 	"seven.com/sockets/db/rdsdb"
 )
 
-var LogPresence = func(c *gin.Context) {
+func LogPresence(c *gin.Context) {
 	handlerName := "log-presence-handler"
 
 	//Retrieve Auth Context
@@ -30,11 +32,16 @@ var LogPresence = func(c *gin.Context) {
 	//Publish Kafka Presence event if the account has no cache-recorded heartbeat or if it has been a minute since its last heartbeat
 	acctScore := rdsdb.RedisClient.ZScore(rctx, config.REDIS_PRESENCE_KEY, acctIdStr)
 	if acctScore == nil || now-acctScore.Val() > 60 {
-		kfkdb.PubEvent(rctx, config.KAFKA_PRESENCE_TOPIC, kfkdb.Event{
+		err = kfkdb.PubEvent(rctx, config.KAFKA_PRESENCE_TOPIC, kfkdb.Event{
 			Type: "HEARTBEAT",
 			AcctID:    acctIdStr,
 			Timestamp: int64(now),
 		})
+		if err != nil{
+			log.Printf("[%s] %v", handlerName, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"msg": "Unable to log presence event"})
+			return
+		}
 	}
 
 	//Update User's Heartbeat in Redis Sorted Set
@@ -70,7 +77,21 @@ func PersistPresence(event kfkdb.Event)error{
 
 	switch event.Type{
 		case "HEARTBEAT":{
-			log.Printf("[%s] Ready to persist heartbeat to db", handlerName)
+			ctx, cancel := context.WithTimeout(context.Background(), 3 * time.Second)
+			defer cancel()
+
+			query := `
+			INSERT INTO last_seen(acct_id, timestamp, updated_at) VALUES($1, TO_TIMESTAMP($2), NOW())
+			ON CONFLICT (acct_id)
+			DO UPDATE SET timestamp = EXCLUDED.timestamp, updated_at = NOW()
+			`
+			_, err := pgdb.DB.Exec(ctx, query, event.AcctID, event.Timestamp)
+			if err != nil {
+				log.Printf("[%s] Failed to persiste heartbeat to DB: %v", handlerName, err)
+				return err
+			}
+
+			log.Printf("[%s] Successfully persisted heartbeat for user %s", handlerName, event.AcctID)
 		}
 		default: {
 			log.Printf("[%s] Unknown event type: %s",handlerName, event.Type)

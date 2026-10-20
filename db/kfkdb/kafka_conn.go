@@ -13,7 +13,7 @@ import (
 
 type Event struct {
 	Type string `json:"event_type"`
-	AcctID    string `json:"acctID"`
+	AcctID    string `json:"acct_id"`
 	Payload   string `json:"payload"`
 	Timestamp int64  `json:"timestamp"`
 }
@@ -21,6 +21,7 @@ type Event struct {
 var KafkaWriter *kafka.Writer
 
 func InitKafkaProd() {
+	handlerName:= "init-kafka-prod"
 	brokerAddr := config.KafkaBrokerAddr
 
 	KafkaWriter = &kafka.Writer{
@@ -31,18 +32,19 @@ func InitKafkaProd() {
 		RequiredAcks: kafka.RequireOne,
 	}
 
-	log.Printf("Kafka producer connected to broker at %s", brokerAddr)
+	log.Printf("[%s] Kafka producer connected to broker at %s", handlerName, brokerAddr)
 }
 
 func CloseKafkaProd(){
+	handlerName:= "close-kafka-prod"
 	if KafkaWriter != nil{
 		if err := KafkaWriter.Close(); err != nil{
-			log.Printf("Failed to close Kafka Writer: %v", err.Error())
+			log.Printf("[%s] Failed to close Kafka Writer: %v", handlerName, err)
 		}
 	}
 }
 
-func StartKafkaConsumer(ctx context.Context, workerName, topic, groupID string, handler func(Event) error){
+func StartKafkaConsumer(ctx context.Context, handlerName, topic, groupID string, handler func(Event) error){
 
 	brokerAddr:= config.KafkaBrokerAddr
 
@@ -50,35 +52,36 @@ func StartKafkaConsumer(ctx context.Context, workerName, topic, groupID string, 
 		Brokers: []string{brokerAddr},
 		Topic: topic,
 		GroupID: groupID,
-		MinBytes: 10e3,
+		MinBytes: 1,
 		MaxBytes: 10e6,
+		MaxWait: 1*time.Second,
 	})
 
 	defer func(){
 		if err:= reader.Close(); err != nil{
-			log.Printf("[%s] Failed to close kafka reader: %v", workerName, err)
+			log.Printf("[%s] Failed to close kafka reader: %v", handlerName, err)
 		}
 	}()
 
-	log.Printf("[%s] Kafka Consumer started for topic '%s' (Group: '%s')", workerName, topic, groupID)
+	log.Printf("[%s] Kafka Consumer started for topic '%s' (Group: '%s')", handlerName, topic, groupID)
 
 	//Polling loop
 	for{
 		//Fetch Message blocks until a message is available or ctx is cancelled
 		msg, err:= reader.FetchMessage(ctx)
 		if err != nil{
-			log.Printf("[%s] Consumer error on topic %s: %v", workerName, topic, err)
+			log.Printf("[%s] Consumer error on topic %s: %v", handlerName, topic, err)
 			if ctx.Err() != nil{
 				return
 			}
 			continue
 		}
-		log.Printf("[%s] New event for %s topic, groupID: %s", workerName, topic, groupID)
+		log.Printf("[%s] New event for %s topic, groupID: %s", handlerName, topic, groupID)
 
 		//Unmarshal message into PresenceEvent
 		var event Event
 		if err := json.Unmarshal(msg.Value, &event); err != nil{
-			log.Printf("[%s] Failed to unmarshal event %s: %v", workerName, string(msg.Value), err)
+			log.Printf("[%s] Failed to unmarshal event %s: %v", handlerName, string(msg.Value), err)
 			//Commit the message anyway to the queue is not blocked
 			_ = reader.CommitMessages(ctx, msg)
 			continue
@@ -89,22 +92,22 @@ func StartKafkaConsumer(ctx context.Context, workerName, topic, groupID string, 
 		//DLT topics have nil handlers
 		if handler == nil{
 			if err := reader.CommitMessages(ctx, msg); err != nil {
-				log.Printf("[%s] Failed to commit DLT message offset: %v", workerName, err)
+				log.Printf("[%s] Failed to commit DLT message offset: %v", handlerName, err)
 			}
 			continue
 		}
 
 		handleEventSuccess := func(){
-			log.Printf("[%s] %s event execution success", workerName, event.Type)
+			log.Printf("[%s] %s event execution success", handlerName, event.Type)
 
 			//Commit the message offset after successful processing
 			if err:= reader.CommitMessages(ctx, msg); err != nil{
-				log.Printf("[%s] Failed to commit message offset: %v", workerName, err)
+				log.Printf("[%s] Failed to commit message offset: %v", handlerName, err)
 			}
 		}
 
 		handleEventFailure:= func ()  {
-			log.Printf("[%s] Handler execution for event %+v failed after %v attempts, publishing to DLT", workerName, event, config.KafkaMaxRetries)
+			log.Printf("[%s] Handler execution for event %+v failed after %v attempts, publishing to DLT", handlerName, event, config.KafkaMaxRetries)
 
 			dlTopic:= fmt.Sprintf("%s-dlt", topic)
 			err := KafkaWriter.WriteMessages(ctx, kafka.Message{
@@ -113,11 +116,11 @@ func StartKafkaConsumer(ctx context.Context, workerName, topic, groupID string, 
 			})
 
 			if err != nil {
-				log.Printf("[%s] CRITICAL: Failed to write message to DLT %s: %v", workerName, dlTopic, err)
+				log.Printf("[%s] CRITICAL: Failed to write message to DLT %s: %v", handlerName, dlTopic, err)
 			} else {
 				// Successfully sent to DLT, commit the original message offset so main consumer moves on
 				if err := reader.CommitMessages(ctx, msg); err != nil {
-					log.Printf("[%s] Failed to commit original message offset after DLT routing: %v", workerName, err)
+					log.Printf("[%s] Failed to commit original message offset after DLT routing: %v", handlerName, err)
 				}
 			}			
 		}

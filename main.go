@@ -14,6 +14,7 @@ import (
 	"seven.com/sockets/auth"
 	"seven.com/sockets/config"
 	"seven.com/sockets/db/kfkdb"
+	"seven.com/sockets/db/pgdb"
 	"seven.com/sockets/db/rdsdb"
 	"seven.com/sockets/presence"
 )
@@ -23,25 +24,36 @@ func main() {
 	config.InitEnv()
 
 	//Init Redis
-	if err := rdsdb.InitRedis(); err != nil {
-		log.Fatalf("Redis Initialization Error: %v", err)
+	rdsCtx, rdsCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer rdsCancel()
+	if err := rdsdb.InitRedis(rdsCtx); err != nil {
+		log.Fatalln(err.Error())
 	}
+
+	//Init Postgres
+	pgCtx, pgCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer pgCancel()
+	if err := pgdb.InitPostgres(pgCtx); err != nil{
+		log.Fatalln(err.Error())
+	}
+	defer pgdb.ClosePostgres()
+
+	//Context for long running background processes
+	bgCtx, bgCancel := context.WithCancel(context.Background())
+	defer bgCancel()
+
 
 	//Init Kafka
 	kfkdb.InitKafkaProd()
 	defer kfkdb.CloseKafkaProd()
 
-
-	cancelCtx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
 	//Kafka presence Consumer goroutine
 	go func(){
-		kfkdb.StartKafkaConsumer(cancelCtx, "kfk-presence-csm", config.KAFKA_PRESENCE_TOPIC, config.KAFKA_PRESENCE_GROUP, presence.PersistPresence)
+		kfkdb.StartKafkaConsumer(bgCtx, "kfk-presence-csm", config.KAFKA_PRESENCE_TOPIC, config.KAFKA_PRESENCE_GROUP, presence.PersistPresence)
 	}()
 	//Kafka presence dlt Consumer goroutine
 	go func(){
-		kfkdb.StartKafkaConsumer(cancelCtx, "kfk-presence-dlt-csm", config.KAFKA_PRESENCE_DLT_TOPIC, config.KAFKA_PRESENCE_GROUP, nil)
+		kfkdb.StartKafkaConsumer(bgCtx, "kfk-presence-dlt-csm", config.KAFKA_PRESENCE_DLT_TOPIC, config.KAFKA_PRESENCE_GROUP, nil)
 	}()
 
 	//Init Gin Router
@@ -72,14 +84,14 @@ func main() {
 	signal.Notify(sigChan, syscall.SIGTERM, syscall.SIGINT)
 	<- sigChan
 
-	cancel()
+	bgCancel()
 
-	//Cancellable context with timeout shutdown of bg processes
+	//Timeout context with for server shutdown
 	timeoutCtx, timeoutCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer timeoutCancel()
-
 	if err:= srvr.Shutdown(timeoutCtx); err != nil{
 		log.Printf("Server Force Shutdown: %v", err)
 	}
+
 	log.Println("Gracefully terminated server")
 }

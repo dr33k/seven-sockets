@@ -12,7 +12,9 @@ import (
 
 var RedisClient *redis.Client
 
-func InitRedis() error{
+func InitRedis(ctx context.Context) error{
+	handlerName := "init-redis"
+
 	redisAddr := config.RedisAddr
 	redisPass := config.RedisPassword
 	redisDB := 0
@@ -26,12 +28,11 @@ func InitRedis() error{
 	})
 
 	//Test Connection
-	ctx := context.Background()
 	_, err := RedisClient.Ping(ctx).Result()
 	if err != nil{
-		return fmt.Errorf("Failed to connect to redis : %w", err)
+		return fmt.Errorf("[%s] Failed to connect to redis : %v", handlerName, err)
 	}
-	log.Printf("Successfully connected to redis : %v", redisAddr)
 
+	log.Printf("[%s] Successfully connected to redis : %v", handlerName, redisAddr)
 	return nil
 }

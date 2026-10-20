@@ -44,11 +44,11 @@ services:
     depends_on:
       - kafka
 
-  acct-profile-db-postgres:
+  sockets-db-postgres:
     image: postgres:16-alpine
-    container_name: acct-profile-db-postgres
+    container_name: sockets-db-postgres
     environment:
-      POSTGRES_DB: acct_profile_db
+      POSTGRES_DB: sockets_db
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: root
     ports:
@@ -58,7 +58,7 @@ services:
     networks:
       - sockets-app-net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d acct_profile_db"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d sockets_db"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -67,15 +67,15 @@ services:
 #    image: seven-sockets:latest
 #    container_name: seven-sockets
 #    depends_on:
-#      acct-profile-db-postgres:
+#      sockets-db-postgres:
 #        condition: service_healthy
 #    ports:
 #      - "8080:8080"
 #    networks:
 #      - sockets-app-net
 #    environment:
-#      JDBC_DATASOURCE_URL: jdbc:postgresql://acct-profile-db-postgres:5432/acct_profile_db
-#      R2DBC_DATASOURCE_URL: r2dbc:postgresql://acct-profile-db-postgres:5432/acct_profile_db
+#      JDBC_DATASOURCE_URL: jdbc:postgresql://sockets-db-postgres:5432/acct_profile_db
+#      R2DBC_DATASOURCE_URL: r2dbc:postgresql://sockets-db-postgres:5432/acct_profile_db
 
 networks:
   sockets-app-net:
