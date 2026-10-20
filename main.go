@@ -37,11 +37,11 @@ func main() {
 
 	//Kafka presence Consumer goroutine
 	go func(){
-		kfkdb.StartKafkaConsumer(cancelCtx, config.KAFKA_PRESENCE_TOPIC, config.KAFKA_PRESENCE_GROUP, presence.PersistPresence)
+		kfkdb.StartKafkaConsumer(cancelCtx, "kfk-presence-csm", config.KAFKA_PRESENCE_TOPIC, config.KAFKA_PRESENCE_GROUP, presence.PersistPresence)
 	}()
 	//Kafka presence dlt Consumer goroutine
 	go func(){
-		kfkdb.StartKafkaConsumer(cancelCtx, config.KAFKA_PRESENCE_DLT_TOPIC, config.KAFKA_PRESENCE_GROUP, nil)
+		kfkdb.StartKafkaConsumer(cancelCtx, "kfk-presence-dlt-csm", config.KAFKA_PRESENCE_DLT_TOPIC, config.KAFKA_PRESENCE_GROUP, nil)
 	}()
 
 	//Init Gin Router

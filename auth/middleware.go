@@ -12,10 +12,12 @@ import (
 
 func JwtMW() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
+		handlerName:="jwt-mw-handler"
 
 		// Get Authorization Header
 		authHeader := ctx.GetHeader("Authorization")
 		if authHeader == "" {
+			log.Printf("[%s] No Authorization Header", handlerName)
 			ctx.JSON(http.StatusUnauthorized, gin.H{"msg": "Unauthorized"})
 			ctx.Abort()
 			return
@@ -24,7 +26,7 @@ func JwtMW() gin.HandlerFunc {
 		//Extract Bearer Token
 		tokens := strings.Split(authHeader, " ")
 		if len(tokens) != 2 || tokens[0] != "Bearer" {
-			log.Println("UnauthorizedInvalid Authorization Header")
+			log.Printf("[%s] Unauthorized: Invalid Authorization Header", handlerName)
 			ctx.JSON(http.StatusUnauthorized, gin.H{"msg": "Unauthorized"})
 			ctx.Abort()
 			return
@@ -42,7 +44,7 @@ func JwtMW() gin.HandlerFunc {
 		})
 
 		if err != nil || !token.Valid {
-			log.Printf("Invalid or Expired Token : %v", err.Error())
+			log.Printf("[%s] Invalid or Expired Token : %v", handlerName, err.Error())
 			ctx.JSON(http.StatusUnauthorized, gin.H{"msg": "Unauthorized"})
 			ctx.Abort()
 			return

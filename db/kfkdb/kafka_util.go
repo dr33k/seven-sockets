@@ -4,16 +4,21 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 
 	"github.com/segmentio/kafka-go"
 )
 
 
 func PubEvent(ctx context.Context, topic string, event Event) error {
+	handlerName := "kfk-pub-event-handler"
+
 	//Serialize into JSON
 	payloadBytes, err := json.Marshal(event)
 	if err != nil {
-		return fmt.Errorf("Failed to marshal presence event %v", event)
+		msg:= fmt.Errorf("[%s] Failed to marshal presence event %v", handlerName, event)
+		log.Println(msg)
+		return msg
 	}
 
 	//Write to Topic
@@ -23,7 +28,9 @@ func PubEvent(ctx context.Context, topic string, event Event) error {
 	})
 
 	if err != nil {
-		return fmt.Errorf("failed to write message to kafka: %w", err)
+		msg:= fmt.Errorf("[%s] failed to write message to kafka: %w", handlerName, err)
+		log.Println(msg)
+		return msg
 	}
 
 	return nil

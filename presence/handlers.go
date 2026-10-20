@@ -15,6 +15,7 @@ import (
 )
 
 var LogPresence = func(c *gin.Context) {
+	handlerName := "log-presence-handler"
 
 	//Retrieve Auth Context
 	authCtx, err := auth.GetAuthCtx(c)
@@ -44,7 +45,7 @@ var LogPresence = func(c *gin.Context) {
 
 	if err != nil {
 		msg := fmt.Sprintf("Failed to update account %v heartbeat", acctIdStr)
-		log.Printf("%v: %v", msg, err.Error())
+		log.Printf("[%s] %v: %v",handlerName, msg, err.Error())
 		c.JSON(http.StatusInternalServerError, gin.H{"msg": msg})
 		return
 	}
@@ -54,24 +55,25 @@ var LogPresence = func(c *gin.Context) {
 	err = rdsdb.RedisClient.ZRemRangeByScore(rctx, config.REDIS_PRESENCE_KEY, "-inf", fmt.Sprintf("%g", staleThreshold)).Err()
 
 	if err != nil {
-		log.Printf("Failed to prune old heartbeats: %v", err.Error())
+		log.Printf("[%s] Failed to prune old heartbeats: %v", handlerName, err.Error())
 		c.JSON(http.StatusOK, gin.H{"msg": "Failed to prune old heartbeats"})
 		return
 	}
 
-	log.Printf("Heartbeat from %v with id %v", authCtx.Account.Fname, acctIdStr)
+	log.Printf("[%s] Heartbeat from %v with id %v", handlerName, authCtx.Account.Fname, acctIdStr)
 	c.JSON(http.StatusOK, nil)
 }
 
 func PersistPresence(event kfkdb.Event)error{
-	log.Printf("Processing presence event [%s] from user %s", event.Type, event.AcctID)
+	handlerName:= "persist-presence-handler"
+	log.Printf("[%s] %s presence event from user %s being persisted", handlerName, event.Type, event.AcctID)
 
 	switch event.Type{
 		case "HEARTBEAT":{
-			log.Println("Ready to persist heartbeat to db")
+			log.Printf("[%s] Ready to persist heartbeat to db", handlerName)
 		}
 		default: {
-			log.Printf("Unknown event type: %s", event.Type)
+			log.Printf("[%s] Unknown event type: %s",handlerName, event.Type)
 		}
 	}
 	return nil
