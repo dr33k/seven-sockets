@@ -38,6 +38,11 @@ func main() {
 	}
 	defer pgdb.ClosePostgres()
 
+	//Run Goose Migrations
+	if err:=pgdb.RunMigrations(); err != nil{
+		log.Fatalln(err.Error())
+	}
+
 	//Context for long running background processes
 	bgCtx, bgCancel := context.WithCancel(context.Background())
 	defer bgCancel()

@@ -1,0 +1,8 @@
+                   List of relations
+ Schema |          Name           |   Type   |  Owner   
+--------+-------------------------+----------+----------
+ public | goose_db_version        | table    | postgres
+ public | goose_db_version_id_seq | sequence | postgres
+ public | user_presence           | table    | postgres
+(3 rows)
+

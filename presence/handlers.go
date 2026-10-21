@@ -81,9 +81,9 @@ func PersistPresence(event kfkdb.Event)error{
 			defer cancel()
 
 			query := `
-			INSERT INTO last_seen(acct_id, timestamp, updated_at) VALUES($1, TO_TIMESTAMP($2), NOW())
+			INSERT INTO user_presence(acct_id, last_seen, updated_at) VALUES($1, TO_TIMESTAMP($2), NOW())
 			ON CONFLICT (acct_id)
-			DO UPDATE SET timestamp = EXCLUDED.timestamp, updated_at = NOW()
+			DO UPDATE SET last_seen = EXCLUDED.last_seen, updated_at = NOW()
 			`
 			_, err := pgdb.DB.Exec(ctx, query, event.AcctID, event.Timestamp)
 			if err != nil {

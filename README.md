@@ -28,19 +28,17 @@ Postgres version: 14+
 
 Relational DB Name: acct_profile_db (Relational DB was used for user last seen records)
 
-Env:
+Env (If you should like to change them. Default values already provided):
 
-    PG_USER, PG_PASSWORD, PG_PORT, JWT_SECRET_KEY
+    SOCKETS_SERVER_PORT, POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_PORT, POSTGRES_HOST, POSTGRES_DB_NAME, REDIS_PASSWORD, REDIS_ADDR, KAFKA_BROKER_ADDR, JWT_SECRET_KEY
 
 
 ## Run application
-Make sure a postgresql 14+ server is running.
-
 
 In project root folder
     
-    $ docker-compose up
-    $ go run .
+    $ docker-compose up -d
+    $ go build
+    $ ./sockets
 
-
-Visit http://localhost:8080
+Server runs on localhost port 8080
