@@ -12,10 +12,9 @@ import (
 
 var RedisClient *redis.Client
 
-func InitRedis(ctx context.Context) error{
+func InitRedis(ctx context.Context, redisAddr string) error{
 	handlerName := "init-redis"
 
-	redisAddr := config.RedisAddr
 	redisPass := config.RedisPassword
 	redisDB := 0
 

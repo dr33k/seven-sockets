@@ -26,7 +26,7 @@ func main() {
 	//Init Redis
 	rdsCtx, rdsCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer rdsCancel()
-	if err := rdsdb.InitRedis(rdsCtx); err != nil {
+	if err := rdsdb.InitRedis(rdsCtx, config.RedisAddr); err != nil {
 		log.Fatalln(err.Error())
 	}
 
@@ -49,7 +49,7 @@ func main() {
 
 
 	//Init Kafka
-	kfkdb.InitKafkaProd()
+	kfkdb.InitKafkaProd(config.KafkaBrokerAddr)
 	defer kfkdb.CloseKafkaProd()
 
 	//Kafka presence Consumer goroutine

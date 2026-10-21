@@ -20,9 +20,8 @@ type Event struct {
 
 var KafkaWriter *kafka.Writer
 
-func InitKafkaProd() {
+func InitKafkaProd(brokerAddr string) {
 	handlerName:= "init-kafka-prod"
-	brokerAddr := config.KafkaBrokerAddr
 
 	KafkaWriter = &kafka.Writer{
 		Addr:  kafka.TCP(brokerAddr),

@@ -19,6 +19,12 @@ import (
 func LogPresence(c *gin.Context) {
 	handlerName := "log-presence-handler"
 
+	if rdsdb.RedisClient == nil{
+		log.Printf("[%s] Uninitialized RedisClient",handlerName)
+		c.JSON(http.StatusInternalServerError, gin.H{"msg": "There was an error on our end, please contact the administrator"})
+		return
+	}
+
 	//Retrieve Auth Context
 	authCtx, err := auth.GetAuthCtx(c)
 	if err != nil {
@@ -38,7 +44,7 @@ func LogPresence(c *gin.Context) {
 			Timestamp: int64(now),
 		})
 		if err != nil{
-			log.Printf("[%s] %v", handlerName, err)
+			log.Println(err.Error())
 			c.JSON(http.StatusInternalServerError, gin.H{"msg": "Unable to log presence event"})
 			return
 		}
@@ -68,11 +74,16 @@ func LogPresence(c *gin.Context) {
 	}
 
 	log.Printf("[%s] Heartbeat from %v with id %v", handlerName, authCtx.Account.Fname, acctIdStr)
-	c.JSON(http.StatusOK, nil)
+	c.Status(http.StatusOK)
 }
 
 func PersistPresence(event kfkdb.Event)error{
 	handlerName:= "persist-presence-handler"
+
+	if pgdb.DB == nil{
+		return fmt.Errorf("[%s] Uninitialized Postgres Pool",handlerName)
+	}
+
 	log.Printf("[%s] %s presence event from user %s being persisted", handlerName, event.Type, event.AcctID)
 
 	switch event.Type{
