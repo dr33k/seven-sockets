@@ -7,12 +7,12 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
-	"seven.com/sockets/config"
+	"seven.com/sockets/env"
 )
 
 func JwtMW() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
-		handlerName:="jwt-mw-handler"
+		handlerName := "jwt-mw-handler"
 
 		// Get Authorization Header
 		authHeader := ctx.GetHeader("Authorization")
@@ -40,7 +40,7 @@ func JwtMW() gin.HandlerFunc {
 			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 				return nil, jwt.ErrSignatureInvalid
 			}
-			return []byte(config.JwtSecretKey), nil
+			return []byte(env.JwtSecretKey), nil
 		})
 
 		if err != nil || !token.Valid {
@@ -49,7 +49,6 @@ func JwtMW() gin.HandlerFunc {
 			ctx.Abort()
 			return
 		}
-
 
 		ctx.Set("auth", &authCtxClaims)
 

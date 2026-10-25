@@ -10,21 +10,21 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 	"seven.com/sockets/auth"
-	"seven.com/sockets/config"
 	"seven.com/sockets/db/pgdb"
 	"seven.com/sockets/db/rdsdb"
 	"seven.com/sockets/db/rmq"
+	"seven.com/sockets/env"
 )
 
-func StartMQWorkers(ctx context.Context) error{
+func StartMQWorkers(ctx context.Context) error {
 	//Rmq Queues
-	q, err :=rmq.DeclareRmqConsumerQueue(config.RmqPresenceQueueName, config.RmqPresenceExName, config.RmqPresenceRoutingKey)
-	if err != nil{
+	q, err := rmq.DeclareQueue(env.RmqPresenceQueueName, env.RmqPresenceExName, env.RmqPresenceRoutingKey)
+	if err != nil {
 		return err
 	}
 	//Rmq Consumer worker
-	go func ()  {
-		if err := rmq.StartRmqConsumer(ctx, q, PersistPresence); err != nil{
+	go func() {
+		if err := rmq.StartConsumer(ctx, q, PersistPresence); err != nil {
 			log.Println(err.Error())
 		}
 	}()
@@ -50,10 +50,10 @@ func LogPresence(c *gin.Context) {
 	now := float64(time.Now().Unix()) // Unix timestamp
 	acctIdStr := authCtx.Account.Id.String()
 
-	//Publish Kafka Presence event if the account has no cache-recorded heartbeat or if it has been a minute since its last heartbeat
-	acctScore := rdsdb.RedisClient.ZScore(rctx, config.RedisPresenceKey, acctIdStr)
+	//Publish Presence event if the account has no cache-recorded heartbeat or if it has been a minute since its last heartbeat
+	acctScore := rdsdb.RedisClient.ZScore(rctx, env.RedisPresenceKey, acctIdStr)
 	if acctScore == nil || now-acctScore.Val() > 60 {
-		err = rmq.PubEvent(config.RmqPresenceExName, config.RmqPresenceRoutingKey, rmq.Event{
+		err = rmq.PubEvent(env.RmqPresenceExName, env.RmqPresenceRoutingKey, rmq.Event{
 			Type:      "HEARTBEAT",
 			AcctID:    acctIdStr,
 			Timestamp: int64(now),
@@ -66,7 +66,7 @@ func LogPresence(c *gin.Context) {
 	}
 
 	//Update User's Heartbeat in Redis Sorted Set
-	err = rdsdb.RedisClient.ZAdd(rctx, config.RedisPresenceKey, redis.Z{
+	err = rdsdb.RedisClient.ZAdd(rctx, env.RedisPresenceKey, redis.Z{
 		Score:  now,
 		Member: acctIdStr,
 	}).Err()
@@ -80,7 +80,7 @@ func LogPresence(c *gin.Context) {
 
 	//Prune heartbearts more than 30 seconds old
 	staleThreshold := now - 30
-	err = rdsdb.RedisClient.ZRemRangeByScore(rctx, config.RedisPresenceKey, "-inf", fmt.Sprintf("%g", staleThreshold)).Err()
+	err = rdsdb.RedisClient.ZRemRangeByScore(rctx, env.RedisPresenceKey, "-inf", fmt.Sprintf("%g", staleThreshold)).Err()
 
 	if err != nil {
 		log.Printf("[%s] Failed to prune old heartbeats: %v", handlerName, err.Error())

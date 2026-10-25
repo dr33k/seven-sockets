@@ -12,50 +12,50 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"seven.com/sockets/auth"
-	"seven.com/sockets/config"
 	"seven.com/sockets/db/pgdb"
 	"seven.com/sockets/db/rdsdb"
 	"seven.com/sockets/db/rmq"
+	"seven.com/sockets/env"
 	"seven.com/sockets/presence"
 )
 
 func main() {
 	//Init Config
-	config.InitEnv()
+	env.InitEnv()
 
 	//Init Redis
 	rdsCtx, rdsCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer rdsCancel()
-	if err := rdsdb.InitRedis(rdsCtx, config.RedisUrl); err != nil {
+	if err := rdsdb.InitRedis(rdsCtx, env.RedisUrl); err != nil {
 		log.Fatalln(err.Error())
 	}
 
 	//Init Postgres
 	pgCtx, pgCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer pgCancel()
-	if err := pgdb.InitPostgres(pgCtx, config.PgUrl); err != nil{
+	if err := pgdb.InitPostgres(pgCtx, env.PgUrl); err != nil {
 		log.Fatalln(err.Error())
 	}
 	defer pgdb.ClosePostgres()
 
 	//Run Goose Migrations
-	if err:=pgdb.RunMigrations(); err != nil{
+	if err := pgdb.RunMigrations(); err != nil {
 		log.Fatalln(err.Error())
 	}
 
 	//Init RMQ
-	if err:=rmq.InitRMQ(config.RmqUrl); err != nil{
+	if err := rmq.InitRMQ(env.RmqUrl); err != nil {
 		log.Fatalln(err.Error())
 	}
 	defer rmq.CloseRMQ()
 	//Rmq Exchanges
-	if err:=rmq.DeclareRmqExchange(config.RmqPresenceExName); err != nil{
+	if err := rmq.DeclareExchange(env.RmqPresenceExName); err != nil {
 		log.Fatalln(err.Error())
 	}
 	//Start MQ Workers
 	bgCtx, bgCancel := context.WithCancel(context.Background())
 	defer bgCancel()
-	if err:=presence.StartMQWorkers(bgCtx); err != nil{
+	if err := presence.StartMQWorkers(bgCtx); err != nil {
 		log.Fatalln(err.Error())
 	}
 
@@ -71,28 +71,28 @@ func main() {
 
 	//Wrap in HTTP server
 	srvr := http.Server{
-		Addr: fmt.Sprintf(":%s", config.ServerPort),
+		Addr:    fmt.Sprintf(":%s", env.ServerPort),
 		Handler: router,
 	}
 
 	//Http Server goroutine
-	go func(){
-		log.Printf("Starting server on port %v", config.ServerPort)
-		if err:= srvr.ListenAndServe(); err != nil && err != http.ErrServerClosed{
+	go func() {
+		log.Printf("Starting server on port %v", env.ServerPort)
+		if err := srvr.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Could not start server: %v", err)
 		}
 	}()
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGTERM, syscall.SIGINT)
-	<- sigChan
+	<-sigChan
 
 	bgCancel()
-	
+
 	//Timeout context with for server shutdown
 	timeoutCtx, timeoutCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer timeoutCancel()
-	if err:= srvr.Shutdown(timeoutCtx); err != nil{
+	if err := srvr.Shutdown(timeoutCtx); err != nil {
 		log.Printf("Server Force Shutdown: %v", err)
 	}
 

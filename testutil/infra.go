@@ -96,11 +96,6 @@ func SetupTestInfra(ctx context.Context) (*TestInfra, error) {
 		log.Fatalf("failed to get rabbitmq amqp url: %v", err)
 	}
 
-	// Initialize your global RabbitMQ client / producer connection
-	if err := rmq.InitRMQ(amqpURL); err != nil {
-		log.Fatalf("failed to initialize rabbitmq client: %v", err)
-	}
-
 	log.Println("[test-infra] Testcontainers (PG, Redis, RabbitMQ) successfully initialized")
 
 	return &TestInfra{

@@ -10,23 +10,23 @@ import (
 
 var DB *pgxpool.Pool
 
-func InitPostgres(ctx context.Context, pgUrl string) error{
+func InitPostgres(ctx context.Context, pgUrl string) error {
 	handlerName := "init-postgres"
 
-	poolConfig, err:= pgxpool.ParseConfig(pgUrl)
-	if err != nil{
-		return fmt.Errorf("[%s] Failed to parse database config: %w", handlerName, err)
+	poolConfig, err := pgxpool.ParseConfig(pgUrl)
+	if err != nil {
+		return fmt.Errorf("[%s] Failed to parse database env: %w", handlerName, err)
 	}
 
 	poolConfig.MaxConns = 25
 
-	pool, err:= pgxpool.NewWithConfig(ctx, poolConfig)
+	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
 	if err != nil {
 		return fmt.Errorf("[%s] Failed to create Connection Pool: %w", handlerName, err)
 	}
 
 	//Verify Connection
-	if err:= pool.Ping(ctx); err!=nil{
+	if err := pool.Ping(ctx); err != nil {
 		return fmt.Errorf("[%s] Failed to ping database: %w", handlerName, err)
 	}
 
@@ -35,9 +35,9 @@ func InitPostgres(ctx context.Context, pgUrl string) error{
 	return nil
 }
 
-func ClosePostgres(){
+func ClosePostgres() {
 	handlerName := "close-postgres"
-	if DB != nil{
+	if DB != nil {
 		DB.Close()
 		log.Printf("[%s] Postgres Connection Pool closed successfully", handlerName)
 	}

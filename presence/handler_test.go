@@ -2,28 +2,30 @@ package presence
 
 import (
 	"context"
-	// "encoding/json"
+	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"testing"
-	// "time"
-	// "uuid"
+	"time"
+	"uuid"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"seven.com/sockets/auth"
-	"seven.com/sockets/config"
 	"seven.com/sockets/db/pgdb"
 	"seven.com/sockets/db/rdsdb"
 	"seven.com/sockets/db/rmq"
+	"seven.com/sockets/env"
 	"seven.com/sockets/testutil"
 )
 
 var testInfra *testutil.TestInfra
 
 func TestMain(m *testing.M) {
+	env.InitEnv()
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// 1. Start Testcontainers before running any tests in this package
@@ -33,21 +35,25 @@ func TestMain(m *testing.M) {
 		panic(fmt.Sprintf("Failed to setup test infra: %v", err))
 	}
 
-	if err:= rdsdb.InitRedis(ctx,testInfra.RedisUrl); err != nil {
+	if err := rdsdb.InitRedis(ctx, testInfra.RedisUrl); err != nil {
 		panic(fmt.Sprintf("Failed to setup Test Redis Client: %v", err))
 	}
 
-	// 2. Override config/clients with test container endpoints
-	if err:= pgdb.InitPostgres(ctx, testInfra.PgUrl); err != nil {
+	// 2. Override env/clients with test container endpoints
+	if err := pgdb.InitPostgres(ctx, testInfra.PgUrl); err != nil {
 		panic(fmt.Sprintf("Failed to setup Test Postgres Connection Pool: %v", err))
 	}
 
-	if err:=rmq.InitRMQ(testInfra.RmqUrl); err != nil{
+	if err := rmq.InitRMQ(testInfra.RmqUrl); err != nil {
 		panic(fmt.Sprintf("Failed to setup Test RMQ: %v", err))
 	}
+	log.Printf("RMQ URL:%s", testInfra.RmqUrl)
 	//Rmq Exchanges
-	if err:=rmq.DeclareRmqExchange(config.RmqPresenceExName); err != nil{
-		panic(fmt.Sprintf("Failed to Declare RMQ presence exchange: %v", err))
+	if err := rmq.DeclareExchange(env.RmqPresenceExName); err != nil {
+		panic(err.Error())
+	}
+	if _, err := rmq.DeclareQueue(env.RmqPresenceQueueName, env.RmqPresenceExName, env.RmqPresenceRoutingKey); err != nil {
+		panic(err.Error())
 	}
 
 	// Run tests
@@ -85,99 +91,87 @@ func TestLogPresence_Unauthorized(t *testing.T) {
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 }
 
-// // Test 2: Ensures presence logged more than 60 seconds ago or never-logged presences fire kafka publish events to persist them to DB
-// func TestLogPresence_SuccessNewHeartbeat(t *testing.T) {
-// 	acctID := uuid.New()
-// 	ctx := context.Background()
-// 	//Reader
+// Test 2: Ensures presence logged more than 60 seconds ago or never-logged presences fire kafka publish events to persist them to DB
+func TestLogPresence_SuccessNewHeartbeat(t *testing.T) {
+	acctID := uuid.New()
+	ctx := context.Background()
 
-// 	_ = rdsdb.RedisClient.Del(ctx, config.RedisUrl).Err()
+	_ = rdsdb.RedisClient.Del(ctx, env.RedisUrl).Err()
 
-// 	// Generate a valid token for our test user
-// 	testToken := testutil.GenerateTestToken(acctID, "John")
+	// Generate a valid token for our test user
+	testToken := testutil.GenerateTestToken(acctID, "John")
 
-// 	router := setupTestRouter()
-// 	req, _ := http.NewRequest(http.MethodPost, "/api/heartbeat", nil)
-	
-// 	// Inject a valid test bearer token header here
-// 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", testToken))
+	router := setupTestRouter()
+	req, _ := http.NewRequest(http.MethodPost, "/api/heartbeat", nil)
 
-// 	w := httptest.NewRecorder()
-// 	router.ServeHTTP(w, req)
+	// Inject a valid test bearer token header here
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", testToken))
 
-// 	// Assert successful request
-// 	assert.Equal(t, http.StatusOK, w.Code)
-// 	assert.Empty(t, w.Body.String())
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
 
+	// Assert successful request
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Empty(t, w.Body.String())
 
-// 	ctx, cancel := context.WithTimeout(context.Background(), 10 * time.Second)
-// 	defer cancel()
+	bodyBytes, err := testutil.ReadRMQMessage(t, env.RmqPresenceQueueName, 5*time.Second)
 
-// 	//Read
+	// Assert successful event publish
+	if assert.NoError(t, err, "Expected a message to be published to Kafka, but got none") {
+		assert.NotEmpty(t, bodyBytes, "MQ message body should not be empty")
+	}
 
-// 	// Assert successful kafka publish
-// 	if assert.NoError(t, err, "Expected a message to be published to Kafka, but got none"){
-// 		assert.NotEmpty(t, msg.Value, "Kafka message body should not be empty")
-// 	}
+	var ev *rmq.Event
+	err = json.Unmarshal(bodyBytes, &ev)
 
-// 	var ev *kfkdb.Event
-// 	err = json.Unmarshal(msg.Value, &ev)
+	if assert.NoError(t, err, fmt.Sprintf("Expected no JSON unmarshalling error but got one: %v", err)) {
+		assert.Equal(t, ev.AcctID, acctID.String())
+	}
+}
 
-// 	if assert.NoError(t, err, fmt.Sprintf("Expected no JSON unmarshalling error but got one: %v", err)){
-// 		assert.Equal(t, ev.AcctID, acctID.String())
-// 	}
-// }
+// Test 3: Deduplicated Heartbeat (Tests that logs with Redis score < 60s ago skips Kafka publish)
+func TestLogPresence_Deduplicated(t *testing.T) {
+	acctID := uuid.New()
+	router := setupTestRouter()
 
-// // Test 3: Deduplicated Heartbeat (Tests that logs with Redis score < 60s ago skips Kafka publish)
-// func TestLogPresence_Deduplicated(t *testing.T) {
-// 	acctID := uuid.New()
-// 	router := setupTestRouter()
-// 	//Reader
-	
-// 	// Generate a valid token for our test user
-// 	testToken := testutil.GenerateTestToken(acctID, "John")
-	
-// 	//First Request
-// 	r1, _ := http.NewRequest(http.MethodPost, "/api/heartbeat", nil)
-// 	r1.Header.Set("Authorization", fmt.Sprintf("Bearer %s", testToken))
-// 	w1 := httptest.NewRecorder()
-// 	router.ServeHTTP(w1, r1) //Creates first presence log 
+	// Generate a valid token for our test user
+	testToken := testutil.GenerateTestToken(acctID, "John")
 
-// 	// Assert successful request
-// 	assert.Equal(t, http.StatusOK, w1.Code)
-// 	assert.Empty(t, w1.Body.String())
+	//First Request
+	r1, _ := http.NewRequest(http.MethodPost, "/api/heartbeat", nil)
+	r1.Header.Set("Authorization", fmt.Sprintf("Bearer %s", testToken))
+	w1 := httptest.NewRecorder()
+	router.ServeHTTP(w1, r1) //Creates first presence log
 
-// 	//Immediate Second Request
-// 	r2, _ := http.NewRequest(http.MethodPost, "/api/heartbeat", nil)
-// 	r2.Header.Set("Authorization", fmt.Sprintf("Bearer %s", testToken))
-// 	w2 := httptest.NewRecorder()
-// 	router.ServeHTTP(w2, r2) //Creates second presence log by the same user almost immediately (less than 60s)
-	
-// 	// Assert successful request
-// 	assert.Equal(t, http.StatusOK, w2.Code)
-// 	assert.Empty(t, w2.Body.String())
+	// Assert successful request
+	assert.Equal(t, http.StatusOK, w1.Code)
+	assert.Empty(t, w1.Body.String())
 
-	
-// 	timeoutCtx1, timeoutCancel1 := context.WithTimeout(context.Background(), 10 * time.Second)
-// 	defer timeoutCancel1()
-// 	//Read
+	//Immediate Second Request
+	r2, _ := http.NewRequest(http.MethodPost, "/api/heartbeat", nil)
+	r2.Header.Set("Authorization", fmt.Sprintf("Bearer %s", testToken))
+	w2 := httptest.NewRecorder()
+	router.ServeHTTP(w2, r2) //Creates second presence log by the same user almost immediately (less than 60s)
 
-// 	//Assert that the first presence log was delivered by kafka
-// 	if assert.NoError(t, err, "First presence log expected but recieved no event from kafka"){
-// 		var ev *kfkdb.Event
-// 		err = json.Unmarshal(msg.Value, &ev)
+	// Assert successful request
+	assert.Equal(t, http.StatusOK, w2.Code)
+	assert.Empty(t, w2.Body.String())
 
-// 		if assert.NoError(t, err, fmt.Sprintf("Expected no JSON unmarshalling error but got one: %v", err)){
-// 			assert.Equal(t, ev.AcctID, acctID.String(),"Expected first presence log's acctId and kafka event's acctId to be equal but was not")
-// 		}
-// 	}
+	bodyBytes, err := testutil.ReadRMQMessage(t, env.RmqPresenceQueueName, 5*time.Second)
 
-// 	timeoutCtx2, timeoutCancel2 := context.WithTimeout(context.Background(), 10 * time.Second)
-// 	defer timeoutCancel2()
-// 	msg, err = kfkReader.ReadMessage(timeoutCtx2)
+	//Assert that the first presence log was delivered from the mq
+	if assert.NoError(t, err, "First presence log expected but recieved no event from kafka"){
+		var ev *rmq.Event
+		err = json.Unmarshal(bodyBytes, &ev)
 
-	
-// 	//Assert that no other kafka event was found since the time between two logs for the same user was less than 60 seconds
-// 	//Error being asserted is a timeout error
-// 	assert.Error(t, err, "Expected a timeout error with no read messages but did not get one")
-// }
+		if assert.NoError(t, err, fmt.Sprintf("Expected no JSON unmarshalling error but got one: %v", err)){
+			assert.Equal(t, ev.AcctID, acctID.String(),"Expected first presence log's acctId and MQ event's acctId to be equal but was not")
+		}
+	}
+
+	_, err = testutil.ReadRMQMessage(t, env.RmqPresenceQueueName, 5*time.Second)
+
+	//Assert that no other MQ event was found since the time between two logs for the same user was less than 60 seconds
+	//Error being asserted is a timeout error
+	assert.Error(t, err, "Expected a timeout error with no read messages but did not get one")
+}

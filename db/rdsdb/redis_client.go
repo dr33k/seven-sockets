@@ -6,29 +6,28 @@ import (
 	"log"
 
 	"github.com/redis/go-redis/v9"
-	"seven.com/sockets/config"
+	"seven.com/sockets/env"
 )
-
 
 var RedisClient *redis.Client
 
-func InitRedis(ctx context.Context, redisAddr string) error{
+func InitRedis(ctx context.Context, redisAddr string) error {
 	handlerName := "init-redis"
 
-	redisPass := config.RedisPassword
+	redisPass := env.RedisPassword
 	redisDB := 0
 
 	RedisClient = redis.NewClient(&redis.Options{
-		Addr: redisAddr,
-		Password: redisPass,
-		DB: redisDB,
-		PoolSize: 100,
+		Addr:         redisAddr,
+		Password:     redisPass,
+		DB:           redisDB,
+		PoolSize:     100,
 		MinIdleConns: 10,
 	})
 
 	//Test Connection
 	_, err := RedisClient.Ping(ctx).Result()
-	if err != nil{
+	if err != nil {
 		return fmt.Errorf("[%s] Failed to connect to redis : %v", handlerName, err)
 	}
 
