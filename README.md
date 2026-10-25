@@ -8,12 +8,13 @@ Uses Seven ID for Authentication, Authorization and Auditing.
 
 
 
-Uses REST API, Kafka Event Queue for asynchronous writes and Redis Store for fast reads.
+Uses REST API, RabbitMQ for asynchronous writes and Redis Store for fast reads.
 
 Functionalities to be provided:
 
-* User authentication with Seven ID: **DONE**
-* User presence and Last Seen records: **IN PROGRESS**
+* Account authentication with Seven ID: **DONE**
+* Account presence/heartbeat persistence: **DONE**
+* Account last seen (presence) retrieval: **IN PROGRESS**
 * Sending and receiving of private messages: TODO
 * Sending and receiving of group messages: TODO
 * Private calls: TODO
@@ -25,12 +26,6 @@ Functionalities to be provided:
 Go version: 1.27.1+
 
 Postgres version: 14+
-
-Relational DB Name: acct_profile_db (Relational DB was used for user last seen records)
-
-Env (If you should like to change them. Default values already provided):
-
-    SOCKETS_SERVER_PORT, POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_PORT, POSTGRES_HOST, POSTGRES_DB_NAME, REDIS_PASSWORD, REDIS_ADDR, KAFKA_BROKER_ADDR, JWT_SECRET_KEY
 
 
 ## Run application
