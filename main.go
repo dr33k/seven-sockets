@@ -13,9 +13,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"seven.com/sockets/auth"
 	"seven.com/sockets/config"
-	"seven.com/sockets/db/kfkdb"
 	"seven.com/sockets/db/pgdb"
 	"seven.com/sockets/db/rdsdb"
+	"seven.com/sockets/db/rmq"
 	"seven.com/sockets/presence"
 )
 
@@ -26,14 +26,14 @@ func main() {
 	//Init Redis
 	rdsCtx, rdsCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer rdsCancel()
-	if err := rdsdb.InitRedis(rdsCtx, config.RedisAddr); err != nil {
+	if err := rdsdb.InitRedis(rdsCtx, config.RedisUrl); err != nil {
 		log.Fatalln(err.Error())
 	}
 
 	//Init Postgres
 	pgCtx, pgCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer pgCancel()
-	if err := pgdb.InitPostgres(pgCtx); err != nil{
+	if err := pgdb.InitPostgres(pgCtx, config.PgUrl); err != nil{
 		log.Fatalln(err.Error())
 	}
 	defer pgdb.ClosePostgres()
@@ -43,23 +43,21 @@ func main() {
 		log.Fatalln(err.Error())
 	}
 
-	//Context for long running background processes
+	//Init RMQ
+	if err:=rmq.InitRMQ(config.RmqUrl); err != nil{
+		log.Fatalln(err.Error())
+	}
+	defer rmq.CloseRMQ()
+	//Rmq Exchanges
+	if err:=rmq.DeclareRmqExchange(config.RmqPresenceExName); err != nil{
+		log.Fatalln(err.Error())
+	}
+	//Start MQ Workers
 	bgCtx, bgCancel := context.WithCancel(context.Background())
 	defer bgCancel()
-
-
-	//Init Kafka
-	kfkdb.InitKafkaProd(config.KafkaBrokerAddr)
-	defer kfkdb.CloseKafkaProd()
-
-	//Kafka presence Consumer goroutine
-	go func(){
-		kfkdb.StartKafkaConsumer(bgCtx, "kfk-presence-csm", config.KAFKA_PRESENCE_TOPIC, config.KAFKA_PRESENCE_GROUP, presence.PersistPresence)
-	}()
-	//Kafka presence dlt Consumer goroutine
-	go func(){
-		kfkdb.StartKafkaConsumer(bgCtx, "kfk-presence-dlt-csm", config.KAFKA_PRESENCE_DLT_TOPIC, config.KAFKA_PRESENCE_GROUP, nil)
-	}()
+	if err:=presence.StartMQWorkers(bgCtx); err != nil{
+		log.Fatalln(err.Error())
+	}
 
 	//Init Gin Router
 	router := gin.Default()
@@ -90,7 +88,7 @@ func main() {
 	<- sigChan
 
 	bgCancel()
-
+	
 	//Timeout context with for server shutdown
 	timeoutCtx, timeoutCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer timeoutCancel()

@@ -6,16 +6,14 @@ import (
 	"log"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"seven.com/sockets/config"
 )
 
 var DB *pgxpool.Pool
 
-func InitPostgres(ctx context.Context) error{
+func InitPostgres(ctx context.Context, pgUrl string) error{
 	handlerName := "init-postgres"
-	dsn:= config.PgUrl
 
-	poolConfig, err:= pgxpool.ParseConfig(dsn)
+	poolConfig, err:= pgxpool.ParseConfig(pgUrl)
 	if err != nil{
 		return fmt.Errorf("[%s] Failed to parse database config: %w", handlerName, err)
 	}

@@ -10,20 +10,21 @@ import (
 	"github.com/pressly/goose/v3"
 	"github.com/redis/go-redis/v9"
 	postgrescontainer "github.com/testcontainers/testcontainers-go/modules/postgres"
+	"github.com/testcontainers/testcontainers-go/modules/rabbitmq"
 	rediscontainer "github.com/testcontainers/testcontainers-go/modules/redis"
-	"github.com/testcontainers/testcontainers-go/modules/redpanda"
-	"seven.com/sockets/db/kfkdb"
 	"seven.com/sockets/db/pgdb"
+	"seven.com/sockets/db/rmq"
 )
 
 type TestInfra struct {
 	PGContainer    *postgrescontainer.PostgresContainer
 	RedisContainer *rediscontainer.RedisContainer
-	KafkaContainer *redpanda.Container
-	DBConnString   string
-	RedisAddr      string
-	KafkaBroker    string
+	RabbitContainer *rabbitmq.RabbitMQContainer
+	PgUrl          string
+	RedisUrl       string
+	RmqUrl  string
 }
+
 const REL_PG_MIGRATIONS_PATH = "../db/pgdb/migrations"
 
 func SetupTestInfra(ctx context.Context) (*TestInfra, error) {
@@ -34,11 +35,6 @@ func SetupTestInfra(ctx context.Context) (*TestInfra, error) {
 		postgrescontainer.WithUsername("postgres"),
 		postgrescontainer.WithPassword("root"),
 		postgrescontainer.BasicWaitStrategies(),
-		// .WithWaitStrategy(
-		// 	wait.ForLog("database system is ready to accept connections").
-		// 		WithOccurrence(2).
-		// 		WithStartupTimeout(30*time.Second),
-		// ),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to start postgres container: %w", err)
@@ -84,47 +80,53 @@ func SetupTestInfra(ctx context.Context) (*TestInfra, error) {
 		return nil, fmt.Errorf("failed to parse redis endpoint: %w", err)
 	}
 
-	// 4. Redpanda (Kafka-compatible) Container
-	kafkaC, err := redpanda.Run(ctx, "docker.redpanda.com/redpandadata/redpanda:v23.3.3")
+	// 4. Spin up RabbitMQ test container using the official management image
+	rabbitContainer, err := rabbitmq.Run(ctx,
+		"rabbitmq:3-management-alpine",
+		rabbitmq.WithAdminUsername("guest"),
+		rabbitmq.WithAdminPassword("guest"),
+	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to start kafka/redpanda container: %w", err)
-	}
-	
-	kafkaBroker, err := kafkaC.KafkaSeedBroker(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get kafka seed broker: %w", err)
-	}
-	
-	err = CreateKafkaTopics(ctx, kafkaBroker, "heartbeat", "heartbeat-dlt")
-	if err != nil {
-		return nil, fmt.Errorf("failed to get Create Kafka topics: %w", err)
+		log.Fatalf("failed to start rabbitmq container: %v", err)
 	}
 
-	log.Println("[test-infra] Testcontainers (PG, Redis, Kafka) successfully initialized")
+	// Retrieve the dynamic AMQP connection URL assigned by testcontainers
+	amqpURL, err := rabbitContainer.AmqpURL(ctx)
+	if err != nil {
+		log.Fatalf("failed to get rabbitmq amqp url: %v", err)
+	}
+
+	// Initialize your global RabbitMQ client / producer connection
+	if err := rmq.InitRMQ(amqpURL); err != nil {
+		log.Fatalf("failed to initialize rabbitmq client: %v", err)
+	}
+
+	log.Println("[test-infra] Testcontainers (PG, Redis, RabbitMQ) successfully initialized")
 
 	return &TestInfra{
 		PGContainer:    pgContainer,
 		RedisContainer: redisC,
-		KafkaContainer: kafkaC,
-		DBConnString:   connStr,
-		RedisAddr:      redisParsedEndpoint.Addr,
-		KafkaBroker:	kafkaBroker,
+		RabbitContainer: rabbitContainer,
+		PgUrl:          connStr,
+		RedisUrl:       redisParsedEndpoint.Addr,
+		RmqUrl:  amqpURL,
 	}, nil
 }
 
-func (t *TestInfra) Teardown(ctx context.Context) {
+func (t *TestInfra) Teardown(ctx context.Context, cancel context.CancelFunc) {
 	// 1. Close application-level client pools first
 	pgdb.ClosePostgres()
-	kfkdb.CloseKafkaProd()
-	
+	rmq.CloseRMQ()
+
 	if t.PGContainer != nil {
 		_ = t.PGContainer.Terminate(ctx)
 	}
 	if t.RedisContainer != nil {
 		_ = t.RedisContainer.Terminate(ctx)
 	}
-	if t.KafkaContainer != nil {
-		_ = t.KafkaContainer.Terminate(ctx)
+	if t != nil && t.RabbitContainer != nil {
+		_=t.RabbitContainer.Terminate(ctx)
 	}
+	cancel()
 	log.Println("[test-infra] Testcontainers terminated")
 }

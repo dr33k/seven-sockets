@@ -11,16 +11,31 @@ import (
 	"github.com/redis/go-redis/v9"
 	"seven.com/sockets/auth"
 	"seven.com/sockets/config"
-	"seven.com/sockets/db/kfkdb"
 	"seven.com/sockets/db/pgdb"
 	"seven.com/sockets/db/rdsdb"
+	"seven.com/sockets/db/rmq"
 )
+
+func StartMQWorkers(ctx context.Context) error{
+	//Rmq Queues
+	q, err :=rmq.DeclareRmqConsumerQueue(config.RmqPresenceQueueName, config.RmqPresenceExName, config.RmqPresenceRoutingKey)
+	if err != nil{
+		return err
+	}
+	//Rmq Consumer worker
+	go func ()  {
+		if err := rmq.StartRmqConsumer(ctx, q, PersistPresence); err != nil{
+			log.Println(err.Error())
+		}
+	}()
+	return nil
+}
 
 func LogPresence(c *gin.Context) {
 	handlerName := "log-presence-handler"
 
-	if rdsdb.RedisClient == nil{
-		log.Printf("[%s] Uninitialized RedisClient",handlerName)
+	if rdsdb.RedisClient == nil {
+		log.Printf("[%s] Uninitialized RedisClient", handlerName)
 		c.JSON(http.StatusInternalServerError, gin.H{"msg": "There was an error on our end, please contact the administrator"})
 		return
 	}
@@ -36,14 +51,14 @@ func LogPresence(c *gin.Context) {
 	acctIdStr := authCtx.Account.Id.String()
 
 	//Publish Kafka Presence event if the account has no cache-recorded heartbeat or if it has been a minute since its last heartbeat
-	acctScore := rdsdb.RedisClient.ZScore(rctx, config.REDIS_PRESENCE_KEY, acctIdStr)
+	acctScore := rdsdb.RedisClient.ZScore(rctx, config.RedisPresenceKey, acctIdStr)
 	if acctScore == nil || now-acctScore.Val() > 60 {
-		err = kfkdb.PubEvent(rctx, config.KAFKA_PRESENCE_TOPIC, kfkdb.Event{
-			Type: "HEARTBEAT",
+		err = rmq.PubEvent(config.RmqPresenceExName, config.RmqPresenceRoutingKey, rmq.Event{
+			Type:      "HEARTBEAT",
 			AcctID:    acctIdStr,
 			Timestamp: int64(now),
 		})
-		if err != nil{
+		if err != nil {
 			log.Println(err.Error())
 			c.JSON(http.StatusInternalServerError, gin.H{"msg": "Unable to log presence event"})
 			return
@@ -51,21 +66,21 @@ func LogPresence(c *gin.Context) {
 	}
 
 	//Update User's Heartbeat in Redis Sorted Set
-	err = rdsdb.RedisClient.ZAdd(rctx, config.REDIS_PRESENCE_KEY, redis.Z{
+	err = rdsdb.RedisClient.ZAdd(rctx, config.RedisPresenceKey, redis.Z{
 		Score:  now,
 		Member: acctIdStr,
 	}).Err()
 
 	if err != nil {
 		msg := fmt.Sprintf("Failed to update account %v heartbeat", acctIdStr)
-		log.Printf("[%s] %v: %v",handlerName, msg, err.Error())
+		log.Printf("[%s] %v: %v", handlerName, msg, err.Error())
 		c.JSON(http.StatusInternalServerError, gin.H{"msg": msg})
 		return
 	}
 
 	//Prune heartbearts more than 30 seconds old
 	staleThreshold := now - 30
-	err = rdsdb.RedisClient.ZRemRangeByScore(rctx, config.REDIS_PRESENCE_KEY, "-inf", fmt.Sprintf("%g", staleThreshold)).Err()
+	err = rdsdb.RedisClient.ZRemRangeByScore(rctx, config.RedisPresenceKey, "-inf", fmt.Sprintf("%g", staleThreshold)).Err()
 
 	if err != nil {
 		log.Printf("[%s] Failed to prune old heartbeats: %v", handlerName, err.Error())
@@ -77,18 +92,19 @@ func LogPresence(c *gin.Context) {
 	c.Status(http.StatusOK)
 }
 
-func PersistPresence(event kfkdb.Event)error{
-	handlerName:= "persist-presence-handler"
+func PersistPresence(event *rmq.Event) error {
+	handlerName := "persist-presence-handler"
 
-	if pgdb.DB == nil{
-		return fmt.Errorf("[%s] Uninitialized Postgres Pool",handlerName)
+	if pgdb.DB == nil {
+		return fmt.Errorf("[%s] Uninitialized Postgres Pool", handlerName)
 	}
 
 	log.Printf("[%s] %s presence event from user %s being persisted", handlerName, event.Type, event.AcctID)
 
-	switch event.Type{
-		case "HEARTBEAT":{
-			ctx, cancel := context.WithTimeout(context.Background(), 3 * time.Second)
+	switch event.Type {
+	case "HEARTBEAT":
+		{
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
 
 			query := `
@@ -104,8 +120,9 @@ func PersistPresence(event kfkdb.Event)error{
 
 			log.Printf("[%s] Successfully persisted heartbeat for user %s", handlerName, event.AcctID)
 		}
-		default: {
-			log.Printf("[%s] Unknown event type: %s",handlerName, event.Type)
+	default:
+		{
+			log.Printf("[%s] Unknown event type: %s", handlerName, event.Type)
 		}
 	}
 	return nil
