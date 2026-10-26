@@ -13,6 +13,7 @@ import (
 	"uuid"
 
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 	"seven.com/sockets/auth"
 	"seven.com/sockets/db/pgdb"
@@ -72,7 +73,8 @@ func setupTestRouter() *gin.Engine {
 	protected := r.Group("/api")
 	protected.Use(auth.JwtMW())
 	{
-		protected.POST("/heartbeat", LogPresence)
+		protected.POST("/presence", LogPresence)
+		protected.GET("/presence/:acct_id", GetLastSeen)
 	}
 	return r
 }
@@ -93,7 +95,7 @@ func TestLogPresence_Unauthorized(t *testing.T) {
 
 // Test 2: Ensures presence logged more than 60 seconds ago or never-logged presences fire kafka publish events to persist them to DB
 func TestLogPresence_SuccessNewHeartbeat(t *testing.T) {
-	acctID := uuid.New()
+	acctID := uuid.New().String()
 	ctx := context.Background()
 
 	_ = rdsdb.RedisClient.Del(ctx, env.RedisUrl).Err()
@@ -125,13 +127,13 @@ func TestLogPresence_SuccessNewHeartbeat(t *testing.T) {
 	err = json.Unmarshal(bodyBytes, &ev)
 
 	if assert.NoError(t, err, fmt.Sprintf("Expected no JSON unmarshalling error but got one: %v", err)) {
-		assert.Equal(t, ev.AcctID, acctID.String())
+		assert.Equal(t, ev.AcctID, acctID)
 	}
 }
 
 // Test 3: Deduplicated Heartbeat (Tests that logs with Redis score < 60s ago skips Kafka publish)
 func TestLogPresence_Deduplicated(t *testing.T) {
-	acctID := uuid.New()
+	acctID := uuid.New().String()
 	router := setupTestRouter()
 
 	// Generate a valid token for our test user
@@ -165,7 +167,7 @@ func TestLogPresence_Deduplicated(t *testing.T) {
 		err = json.Unmarshal(bodyBytes, &ev)
 
 		if assert.NoError(t, err, fmt.Sprintf("Expected no JSON unmarshalling error but got one: %v", err)){
-			assert.Equal(t, ev.AcctID, acctID.String(),"Expected first presence log's acctId and MQ event's acctId to be equal but was not")
+			assert.Equal(t, ev.AcctID, acctID,"Expected first presence log's acctId and MQ event's acctId to be equal but was not")
 		}
 	}
 
@@ -174,4 +176,99 @@ func TestLogPresence_Deduplicated(t *testing.T) {
 	//Assert that no other MQ event was found since the time between two logs for the same user was less than 60 seconds
 	//Error being asserted is a timeout error
 	assert.Error(t, err, "Expected a timeout error with no read messages but did not get one")
+}
+
+// Test 4: GetLastSeen - Cache Hit (Reads directly from Redis ZSet)
+func TestGetLastSeen_CacheHit(t *testing.T) {
+	acctID := uuid.New().String()
+	ctx := context.Background()
+	now := time.Now().Truncate(time.Second) // Truncate to second for epoch comparison
+	score := float64(now.Unix())
+
+	// 1. Seed Redis with the last seen score
+	err := rdsdb.RedisClient.ZAdd(ctx, env.RedisPresenceKey, redis.Z{
+		Score:  score,
+		Member: acctID,
+	}).Err()
+	assert.NoError(t, err)
+	
+	// Ensure cleanup after test
+	defer rdsdb.RedisClient.ZRem(ctx, env.RedisPresenceKey, acctID)
+
+	// 2. Make GET request
+	router := setupTestRouter()
+	req, _ := http.NewRequest(http.MethodGet, fmt.Sprintf("/api/presence/%s", acctID), nil)
+	testToken := testutil.GenerateTestToken(acctID, "John")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", testToken))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	// 3. Assertions
+	assert.Equal(t, http.StatusOK, w.Code)
+	
+	// Optional: verify response body contains the correct timestamp string
+	expectedTimeStr := now.Format(time.RFC3339)
+	assert.Contains(t, w.Body.String(), acctID)
+	assert.Contains(t, w.Body.String(), expectedTimeStr)
+}
+
+// Test 5: GetLastSeen - Cache Miss (Falls back to Postgres, returns 200, and backfills Redis)
+func TestGetLastSeen_CacheMiss_DBFallback(t *testing.T) {
+	acctID := uuid.New().String()
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Second)
+
+	// 1. Ensure Redis does NOT have the record (Cache Miss)
+	_ = rdsdb.RedisClient.ZRem(ctx, env.RedisPresenceKey, acctID).Err()
+
+	// 2. Insert mock record directly into PostgreSQL
+	insertQuery := `insert into acct_presence (acct_id, last_seen) values ($1, $2) on conflict (acct_id) do update set last_seen = $2;`
+	_, err := pgdb.DB.Exec(ctx, insertQuery, acctID, now)
+	assert.NoError(t, err)
+
+	defer func() {
+		_, _ = pgdb.DB.Exec(ctx, `delete from acct_presence where acct_id = $1;`, acctID)
+	}()
+
+	// 3. Make GET request
+	router := setupTestRouter()
+	req, _ := http.NewRequest(http.MethodGet, fmt.Sprintf("/api/presence/%s", acctID), nil)
+	testToken := testutil.GenerateTestToken(acctID, "John")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", testToken))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	// 4. Assertions for HTTP Response
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), acctID)
+
+	// 5. Verify that Redis was backfilled (Cache-Aside pattern verification)
+	score, err := rdsdb.RedisClient.ZScore(ctx, env.RedisPresenceKey, acctID).Result()
+	assert.NoError(t, err, "Expected Redis to be backfilled after DB fallback")
+	assert.Equal(t, float64(now.Unix()), score)
+
+	// Cleanup Redis
+	_ = rdsdb.RedisClient.ZRem(ctx, env.RedisPresenceKey, acctID).Err()
+}
+
+// Test 6: GetLastSeen - Test Not Found (Missing from both Redis and Postgres)
+func TestGetLastSeen_NotFound(t *testing.T) {
+	fakeAcctID := uuid.New().String()
+	ctx := context.Background()
+
+	// Ensure it's absent from both caches
+	_ = rdsdb.RedisClient.ZRem(ctx, env.RedisPresenceKey, fakeAcctID).Err()
+	_, _ = pgdb.DB.Exec(ctx, `delete from acct_presence where acct_id = $1;`, fakeAcctID)
+
+	// Make GET request
+	router := setupTestRouter()
+	req, _ := http.NewRequest(http.MethodGet, fmt.Sprintf("/api/presence/%s", fakeAcctID), nil)
+	testToken := testutil.GenerateTestToken(fakeAcctID, "John")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", testToken))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	// Assertions
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	assert.Contains(t, w.Body.String(), "Presence record not found")
 }
