@@ -66,7 +66,8 @@ func main() {
 	protected := router.Group("/api")
 	protected.Use(auth.JwtMW())
 	{
-		protected.POST("/heartbeat", presence.LogPresence)
+		protected.POST("/presence", presence.LogPresence)
+		protected.GET("/presence/:acct_id", presence.GetLastSeen)
 	}
 
 	//Wrap in HTTP server

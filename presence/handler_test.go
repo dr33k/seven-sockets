@@ -82,7 +82,7 @@ func TestLogPresence_Unauthorized(t *testing.T) {
 	router := setupTestRouter()
 
 	// Create a request without an Authorization header / JWT token
-	req, _ := http.NewRequest(http.MethodPost, "/api/heartbeat", nil)
+	req, _ := http.NewRequest(http.MethodPost, "/api/presence", nil)
 	w := httptest.NewRecorder()
 
 	router.ServeHTTP(w, req)
@@ -102,7 +102,7 @@ func TestLogPresence_SuccessNewHeartbeat(t *testing.T) {
 	testToken := testutil.GenerateTestToken(acctID, "John")
 
 	router := setupTestRouter()
-	req, _ := http.NewRequest(http.MethodPost, "/api/heartbeat", nil)
+	req, _ := http.NewRequest(http.MethodPost, "/api/presence", nil)
 
 	// Inject a valid test bearer token header here
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", testToken))
@@ -138,7 +138,7 @@ func TestLogPresence_Deduplicated(t *testing.T) {
 	testToken := testutil.GenerateTestToken(acctID, "John")
 
 	//First Request
-	r1, _ := http.NewRequest(http.MethodPost, "/api/heartbeat", nil)
+	r1, _ := http.NewRequest(http.MethodPost, "/api/presence", nil)
 	r1.Header.Set("Authorization", fmt.Sprintf("Bearer %s", testToken))
 	w1 := httptest.NewRecorder()
 	router.ServeHTTP(w1, r1) //Creates first presence log
@@ -148,7 +148,7 @@ func TestLogPresence_Deduplicated(t *testing.T) {
 	assert.Empty(t, w1.Body.String())
 
 	//Immediate Second Request
-	r2, _ := http.NewRequest(http.MethodPost, "/api/heartbeat", nil)
+	r2, _ := http.NewRequest(http.MethodPost, "/api/presence", nil)
 	r2.Header.Set("Authorization", fmt.Sprintf("Bearer %s", testToken))
 	w2 := httptest.NewRecorder()
 	router.ServeHTTP(w2, r2) //Creates second presence log by the same user almost immediately (less than 60s)

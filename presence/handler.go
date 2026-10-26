@@ -2,6 +2,7 @@ package presence
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -32,7 +33,7 @@ func StartMQWorkers(ctx context.Context) error {
 }
 
 func LogPresence(c *gin.Context) {
-	handlerName := "log-presence-handler"
+	const handlerName = "log-presence-handler"
 
 	if rdsdb.RedisClient == nil {
 		log.Printf("[%s] Uninitialized RedisClient", handlerName)
@@ -93,7 +94,7 @@ func LogPresence(c *gin.Context) {
 }
 
 func PersistPresence(event *rmq.Event) error {
-	handlerName := "persist-presence-handler"
+	const handlerName = "persist-presence-handler"
 
 	if pgdb.DB == nil {
 		return fmt.Errorf("[%s] Uninitialized Postgres Pool", handlerName)
@@ -108,7 +109,7 @@ func PersistPresence(event *rmq.Event) error {
 			defer cancel()
 
 			query := `
-			INSERT INTO user_presence(acct_id, last_seen, updated_at) VALUES($1, TO_TIMESTAMP($2), NOW())
+			INSERT INTO acct_presence(acct_id, last_seen, updated_at) VALUES($1, TO_TIMESTAMP($2), NOW())
 			ON CONFLICT (acct_id)
 			DO UPDATE SET last_seen = EXCLUDED.last_seen, updated_at = NOW()
 			`
@@ -126,4 +127,59 @@ func PersistPresence(event *rmq.Event) error {
 		}
 	}
 	return nil
+}
+
+func GetLastSeen(c *gin.Context) {
+	const handlerName = "get-heartbeat"
+	ctx := c.Request.Context()
+	acctID := c.Param("acct_id")
+
+	if acctID == "" {
+		log.Printf("[%s] Account ID not provided", handlerName)
+		c.JSON(http.StatusBadRequest, gin.H{"msg": "Account ID not provided"})
+		return
+	}
+
+	rdsLastSeen := rdsdb.RedisClient.ZScore(ctx, env.RedisPresenceKey, acctID)
+	err := rdsLastSeen.Err()
+
+	var lastSeenTime time.Time
+
+	if err == nil{ //Cache hit
+	// Redis ZScore returns float64 (epoch seconds)
+		score := rdsLastSeen.Val()
+		lastSeenTime = time.Unix(int64(score), 0)
+
+	}else if errors.Is(err, redis.Nil) { //Cache miss: Fetch from DB
+
+		log.Printf("[%s] Cache miss for acct %s, falling back to database", handlerName, acctID)
+
+		query := `select last_seen from acct_presence where acct_id=$1;`
+		row := pgdb.DB.QueryRow(ctx, query, acctID)
+
+		if scanErr := row.Scan(&lastSeenTime); scanErr != nil {
+			log.Printf("[%s] Record for acct %s not found: %v in DB", handlerName, acctID, scanErr)
+			c.JSON(http.StatusNotFound, gin.H{"msg": "Presence record not found for this account"})
+			return
+		}
+
+		// --- BACKFILL REDIS (Cache-Aside Pattern) ---
+		// Populate Redis so the next request is a cache hit
+		score := float64(lastSeenTime.Unix())
+		_ = rdsdb.RedisClient.ZAdd(ctx, env.RedisPresenceKey, redis.Z{
+			Score:  score,
+			Member: acctID,
+		}).Err()
+
+	} else{
+		log.Printf("[%s] Error fetching last seen score from redis: %v", handlerName, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"msg": "An error occured on our end, please contact administrator"})
+		return
+	}
+
+	log.Printf("[%s] Successsfully retrieved last seen records for acct %s", handlerName, acctID)
+	c.JSON(http.StatusOK, gin.H{
+		"acct_id": acctID,
+		"last_seen": lastSeenTime.Format(time.RFC3339),
+	})
 }
