@@ -13,6 +13,7 @@ import (
 	"uuid"
 
 	"github.com/gin-gonic/gin"
+	"github.com/rabbitmq/amqp091-go"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 	"seven.com/sockets/auth"
@@ -53,10 +54,31 @@ func TestMain(m *testing.M) {
 	if err := rmq.DeclareExchange(env.RmqPresenceExName); err != nil {
 		panic(err.Error())
 	}
-	if _, err := rmq.DeclareQueue(env.RmqPresenceQueueName, env.RmqPresenceExName, env.RmqPresenceRoutingKey); err != nil {
+
+	//----------------------Rmq Presence DLQ and Main Queue---------------
+
+	dlxName := env.RmqPresenceExName+"_dlx"
+	dlqName:= env.RmqPresenceQueueName+"_dlx"
+
+	//Dead Letter Queue
+	_, dlerr := rmq.DeclareQueue(dlqName, dlxName, env.RmqPresenceDlxRoutingKey, nil)
+	if dlerr != nil {
+		panic(dlerr.Error())
+	}
+
+	qargs := amqp091.Table{
+		"x-dead-letter-exchange":    dlxName,
+		"x-dead-letter-routing-key": env.RmqPresenceDlxRoutingKey,
+	}
+	//Main Queue
+	_, err = rmq.DeclareQueue(env.RmqPresenceQueueName, env.RmqPresenceExName, env.RmqPresenceRoutingKey, qargs)
+	if err != nil {
 		panic(err.Error())
 	}
 
+	//-----------------------------------------------------------------------
+
+	
 	// Run tests
 	code := m.Run()
 

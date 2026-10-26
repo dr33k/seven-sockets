@@ -3,6 +3,7 @@ package env
 import (
 	"fmt"
 	"os"
+	"strconv"
 )
 
 var ServerPort = os.Getenv("SOCKETS_SERVER_PORT")
@@ -12,9 +13,13 @@ var RedisPassword = os.Getenv("REDIS_PASSWORD")
 var RedisUrl = os.Getenv("REDIS_URL")
 var RedisPresenceKey = os.Getenv("REDIS_PRESENCE_KEY")
 
+var rmqMaxRetriesStr = os.Getenv("RMQ_MAX_RETRIES")
+var RmqMaxRetries int
+
 var RmqPresenceExName = os.Getenv("RMQ_PRESENCE_EXCHANGE_NAME")
 var RmqPresenceQueueName = os.Getenv("RMQ_PRESENCE_QUEUE_NAME")
 var RmqPresenceRoutingKey = os.Getenv("RMQ_PRESENCE_ROUTING_KEY")
+var RmqPresenceDlxRoutingKey = os.Getenv("RMQ_PRESENCE_DLX_ROUTING_KEY")
 
 var PgUrl string
 var RmqUrl string
@@ -35,6 +40,17 @@ func InitEnv() {
 	if RmqPresenceExName == "" {
 		RmqPresenceExName = "presence_exchange"
 	}
+
+	if rmqMaxRetriesStr == "" {
+		rmqMaxRetriesStr = "3"
+	} 
+	val, err := strconv.Atoi(rmqMaxRetriesStr)
+	if err == nil {
+		RmqMaxRetries = val
+	}else{
+		RmqMaxRetries = 3
+	}
+
 	if RmqPresenceQueueName == "" {
 		RmqPresenceQueueName = "presence_queue"
 	}
@@ -58,6 +74,9 @@ func InitEnv() {
 
 	if RmqPresenceRoutingKey == "" {
 		RmqPresenceRoutingKey = "account.presence.heartbeat"
+	}
+	if RmqPresenceDlxRoutingKey == "" {
+		RmqPresenceDlxRoutingKey = "account.presence.dead"
 	}
 	pghost := os.Getenv("RMQ_HOST")
 	if pghost == "" {

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/rabbitmq/amqp091-go"
 	"github.com/redis/go-redis/v9"
 	"seven.com/sockets/auth"
 	"seven.com/sockets/db/pgdb"
@@ -18,11 +19,26 @@ import (
 )
 
 func StartMQWorkers(ctx context.Context) error {
-	//Rmq Queues
-	q, err := rmq.DeclareQueue(env.RmqPresenceQueueName, env.RmqPresenceExName, env.RmqPresenceRoutingKey)
+	dlxName := env.RmqPresenceExName+"_dlx"
+	dlqName:= env.RmqPresenceQueueName+"_dlx"
+
+	//Dead Letter Queue
+	_, dlerr := rmq.DeclareQueue(dlqName, dlxName, env.RmqPresenceDlxRoutingKey, nil)
+	if dlerr != nil {
+		return dlerr
+	}
+
+	qargs := amqp091.Table{
+		"x-dead-letter-exchange":    dlxName,
+		"x-dead-letter-routing-key": env.RmqPresenceDlxRoutingKey,
+	}
+
+	//Main Queue
+	q, err := rmq.DeclareQueue(env.RmqPresenceQueueName, env.RmqPresenceExName, env.RmqPresenceRoutingKey, qargs)
 	if err != nil {
 		return err
 	}
+
 	//Rmq Consumer worker
 	go func() {
 		if err := rmq.StartConsumer(ctx, q, PersistPresence); err != nil {

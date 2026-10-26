@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/rabbitmq/amqp091-go"
+	"seven.com/sockets/env"
 )
 
 type RabbitMQClient struct {
@@ -24,7 +26,7 @@ type Event struct {
 var RmqClient *RabbitMQClient
 
 func InitRMQ(url string) error {
-	handlerName := "init-rmq"
+	const handlerName = "init-rmq"
 	var err error
 
 	log.Printf("[%s] Connecting to broker...", handlerName)
@@ -49,7 +51,9 @@ func InitRMQ(url string) error {
 }
 
 func DeclareExchange(exchangeName string) error {
-	handlerName := "declare-rmq-exchange"
+	const handlerName = "declare-rmq-exchange"
+
+	//Main Exchange
 	err := RmqClient.Channel.ExchangeDeclare(
 		exchangeName, //name
 		"topic",      //type
@@ -60,13 +64,31 @@ func DeclareExchange(exchangeName string) error {
 		nil,          // arguments
 	)
 	if err != nil {
-		return fmt.Errorf("[%s] Failed to declare exchange: %w", handlerName, err)
+		return fmt.Errorf("[%s] Failed to declare %s exchange: %w", handlerName, exchangeName, err)
 	}
+
+	//Dead Letter Exchange
+	dlxExchangeName := exchangeName+"_dlx"
+
+	err = RmqClient.Channel.ExchangeDeclare(
+		dlxExchangeName, //name
+		"direct",      //type
+		true,         // durable
+		false,        // auto-deleted
+		false,        // internal
+		false,        // no-wait
+		nil,          // arguments
+	)
+	if err != nil {
+		return fmt.Errorf("[%s] Failed to declare %s exchange: %w", handlerName, dlxExchangeName+"-dlx", err)
+	}
+
+	log.Printf("[%s] Exchanges %s and %s duccessfully declared", handlerName, exchangeName, dlxExchangeName)
 	return nil
 }
 
-func DeclareQueue(queueName, exchangeName, routingKey string) (*amqp091.Queue, error) {
-	handlerName := "declare-rmq-csm-queue"
+func DeclareQueue(queueName, exchangeName, routingKey string, qargs amqp091.Table) (*amqp091.Queue, error) {
+	const handlerName = "declare-rmq-csm-queue"
 	ch := RmqClient.Channel
 
 	// 1. Declare a durable queue for your presence service
@@ -76,7 +98,7 @@ func DeclareQueue(queueName, exchangeName, routingKey string) (*amqp091.Queue, e
 		false,     // auto-delete when unused
 		false,     // exclusive
 		false,     // no-wait
-		nil,       // arguments
+		qargs,       // arguments
 	)
 	if err != nil {
 		return nil, fmt.Errorf("[%s] Failed to declare queue: %w", handlerName, err)
@@ -99,7 +121,12 @@ func DeclareQueue(queueName, exchangeName, routingKey string) (*amqp091.Queue, e
 
 // StartConsumer starts a background worker goroutine to consume and persist presence events
 func StartConsumer(ctx context.Context, q *amqp091.Queue, handler func(*Event) error) error {
-	handlerName := "start-rmq-consumer"
+	const handlerName =  "start-rmq-consumer"
+
+	if handler == nil {
+		return fmt.Errorf("[%s] Could not start consumer. No handler assigned", handlerName)
+	}
+
 	ch := RmqClient.Channel
 
 	// Start consuming from the queue
@@ -128,29 +155,48 @@ func StartConsumer(ctx context.Context, q *amqp091.Queue, handler func(*Event) e
 					log.Printf("[%s] Message channel closed.", handlerName)
 					return
 				}
+				//Launch another goroutine to process the message and retries
+				go func(msg amqp091.Delivery){
+					const workerName = "rmq-retry-worker"
 
-				log.Printf("[%s] Received event: %s", handlerName, string(d.Body))
+					log.Printf("[%s] Received event: %s", handlerName, string(msg.Body))
 
-				// 1. Unmarshal the event payload
-				var ev Event // Your event struct
-				if err := json.Unmarshal(d.Body, &ev); err != nil {
-					log.Printf("[%s] Failed to unmarshal event: %v", handlerName, err)
-					// Reject/nack the message without requeueing if it's malformed
-					_ = d.Nack(false, false)
-					continue
-				}
+					// 1. Unmarshal the event payload
+					var ev Event
+					if err := json.Unmarshal(d.Body, &ev); err != nil {
+						log.Printf("[%s] Failed to unmarshal event: %v", handlerName, err)
+						// Reject/nack the message without requeueing if it's malformed. Triggers DLQ
+						_ = msg.Nack(false, false)
+						return
+					}
 
-				// 2. Persist to PostgreSQL using your service/repository layer
-				if err := handler(&ev); err != nil {
-					log.Printf("[%s] Failed to persist presence for acct %s: %v", handlerName, ev.AcctID, err)
-					// Nack and requeue so it retries later
-					_ = d.Nack(false, true)
-					continue
-				}
+					// 2. Persist to PostgreSQL using service/repository layer
+					err := handler(&ev)
+					if err == nil{
+						// Acknowledge successful processing
+						_ = msg.Ack(false)
+						log.Printf("[%s] Successfully persisted presence for acct %s", handlerName, ev.AcctID)
+						return
 
-				// 3. Acknowledge successful processing
-				_ = d.Ack(false)
-				log.Printf("[%s] Successfully persisted presence for acct %s", handlerName, ev.AcctID)
+					} else {
+						// --- FAILURE HANDLING ---
+						retryCount := getRetryCount(msg.Headers)
+						log.Printf("[%s] Processing failed (Attempt %d/%d): %v", workerName, retryCount+1, env.RmqMaxRetries, err)
+
+						if retryCount >= env.RmqMaxRetries {
+							log.Printf("[%s] Max retries reached. Sending message to Dead Letter Queue (DLQ).", workerName)
+							// Setting requeue to false triggers the x-dead-letter-exchange routing
+							_ = d.Nack(false, false) 
+							return
+						}
+
+						// Implement a brief backoff pause before retrying
+						time.Sleep(2 * time.Second)
+
+						// Increment retry count in headers and re-queue
+						incrementAndRequeue(d, ch)
+					}
+				}(d)
 			}
 		}
 	}()
@@ -160,7 +206,7 @@ func StartConsumer(ctx context.Context, q *amqp091.Queue, handler func(*Event) e
 }
 
 func CloseRMQ() {
-	handlerName := "close-rmq"
+	const handlerName = "close-rmq"
 	if RmqClient == nil {
 		return
 	}
@@ -175,4 +221,53 @@ func CloseRMQ() {
 		}
 	}
 	log.Printf("[%s] Connection and channel closed successfully", handlerName)
+}
+
+
+// Helper to read current retry count from AMQP headers
+func getRetryCount(headers amqp091.Table) int {
+	if headers == nil {
+		return 0
+	}
+	if val, ok := headers["x-retry-count"]; ok {
+		if count, ok := val.(int32); ok {
+			return int(count)
+		}
+		if count, ok := val.(int); ok {
+			return count
+		}
+	}
+	return 0
+}
+
+// Helper to bump retry count and push back onto the queue
+func incrementAndRequeue(msg amqp091.Delivery, ch *amqp091.Channel) {
+	retryCount := getRetryCount(msg.Headers)
+	
+	if msg.Headers == nil {
+		msg.Headers = amqp091.Table{}
+	}
+	msg.Headers["x-retry-count"] = retryCount + 1
+
+	// Publish a new message back to the exchange with updated headers, 
+	// then Ack the old one so it leaves the head of the queue.
+	err := ch.PublishWithContext(
+		context.Background(),
+		env.RmqPresenceExName,
+		msg.RoutingKey,
+		false,
+		false,
+		amqp091.Publishing{
+			ContentType: msg.ContentType,
+			Body:        msg.Body,
+			Headers:     msg.Headers,
+		},
+	)
+
+	if err == nil {
+		_ = msg.Ack(false) // Safely remove original failing message
+	} else {
+		// Fallback if republication fails: Nack with requeue
+		_ = msg.Nack(false, true)
+	}
 }
