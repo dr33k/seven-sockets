@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 620" width="100%" height="100%" style="background-color: #0d1117; font-family: &#39;SF Pro Text&#39;, &#39;Segoe UI&#39;, Roboto, Helvetica, Arial, sans-serif;">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 620" width="100%" height="100%" style="background-color: #0d1117; font-family: AND#39;SF Pro TextAND#39;, AND#39;Segoe UIAND#39;, Roboto, Helvetica, Arial, sans-serif;">
   <defs>
     <!-- Glow/Neon Effect -->
     <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
@@ -64,8 +64,7 @@
   <!-- TOP RIGHT LEGEND -->
   <g transform="translate(680, 25)">
     <rect width="395" height="45" rx="6" fill="#161b22" stroke="#30363d" stroke-width="1.5" />
-    <text x="15" y="27" class="legend-title">Sockets: Presence Logging &</text>
-    <text x="235" y="27" class="sub-title">Rate Limiting System Design</text>
+    <text x="15" y="27" class="legend-title">Sockets: Presence: Log a heartbeat (Deduplication)</text>
   </g>
 
   <!-- COMPONENT NODES -->

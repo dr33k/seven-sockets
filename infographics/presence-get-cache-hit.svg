@@ -64,8 +64,7 @@
   <!-- TOP RIGHT LEGEND -->
   <g transform="translate(680, 25)">
     <rect width="395" height="45" rx="6" fill="#161b22" stroke="#30363d" stroke-width="1.5" />
-    <text x="15" y="27" class="legend-title">Sockets: Presence Logging &</text>
-    <text x="235" y="27" class="sub-title">Rate Limiting System Design</text>
+    <text x="15" y="27" class="legend-title">Sockets: Presence: Get client last seen</text>
   </g>
 
   <!-- COMPONENT NODES -->

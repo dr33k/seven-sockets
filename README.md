@@ -20,19 +20,27 @@ Functionalities to be provided:
 * Private calls: TODO
 * Group calls: TODO
 
-CLIENT DEVICE PRESENCE PERSISTENCE AND RETRIEVAL
+**PRESENCE PERSISTENCE AND RETRIEVAL**
 
 POST: Log a heartbeat
-![alt text](infographics/presence-post-cache-miss.svg)
+
+
+![Log Heartbeat](./infographics/presence-post-cache-miss.svg)
 
 POST: Log a heartbeat (Deduplication): Make sure all heartbeat POST rerquests made in the last 60 seconds dont flood the db but hit the cache alone
-![alt text](infographics/presence-post-dedup.svg)
+
+
+![Log Heartbeat Dedup](./infographics/presence-post-dedup.svg)
 
 GET: Get client last seen (Cache Hit)
-![alt text](infographics/presence-get-cache-hit.svg)
+
+
+![Get Last Seen Cache Hit](./infographics/presence-get-cache-hit.svg)
 
 GET: Get client last seen (Cache Miss: DB Fallback with Cache-Aside strategy)
-![alt text](infographics/presence-get-cache-miss.svg)
+
+
+![Get Last Seen Cache Miss](./infographics/presence-get-cache-miss.svg)
 
 
 ## Requirements
