@@ -1,0 +1,145 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 620" width="100%" height="100%" style="background-color: #0d1117; font-family: &#39;SF Pro Text&#39;, &#39;Segoe UI&#39;, Roboto, Helvetica, Arial, sans-serif;">
+  <defs>
+    <!-- Glow/Neon Effect -->
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3.5" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+
+    <!-- Arrow Markers -->
+    <marker id="arrowHead" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#30363d" />
+    </marker>
+    <marker id="arrowHeadGreen" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#238636" />
+    </marker>
+  </defs>
+
+  <style>
+    /* Global Text Styles */
+    text { fill: #c9d1d9; font-size: 13px; }
+    .title { font-weight: 700; font-size: 16px; fill: #e6edf3; }
+    .sub-title { font-size: 11px; fill: #8b949e; }
+    .legend-title { font-weight: 700; font-size: 15px; fill: #e6edf3; }
+    
+    /* Box Styles */
+    .node-box { fill: #161b22; stroke: #30363d; stroke-width: 1.5px; rx: 8px; }
+    .node-box-dim { fill: #161b22; stroke: #21262d; stroke-width: 1px; rx: 8px; opacity: 0.3; }
+    
+    /* Icon Styles */
+    .icon { fill: #30363d; stroke: #30363d; stroke-width: 1.5; }
+    .icon-accent { stroke: #58a6ff; }
+    .icon-green { stroke: #238636; }
+    
+    /* Flow Lines */
+    .flow-path { fill: none; stroke: #30363d; stroke-width: 3px; stroke-dasharray: 8 8; stroke-linecap: round; marker-end: url(#arrowHead); }
+    .flow-path-green { fill: none; stroke: #238636; stroke-width: 3px; stroke-dasharray: 8 8; stroke-linecap: round; marker-end: url(#arrowHeadGreen); }
+
+    /* Animated Bubbles/Packets */
+    .packet { fill: #58a6ff; filter: url(#glow); }
+    .packet-green { fill: #238636; filter: url(#glow); }
+
+    /* Motion Animations */
+    .motion-client-api { animation: anim-1 2s linear infinite; }
+    .motion-api-redis { animation: anim-2 2s linear infinite; }
+    .motion-redis-api { animation: anim-3 2s linear infinite; }
+    .motion-api-client { animation: anim-4 2s linear infinite; }
+
+    @keyframes anim-1 { 0% { cx: 160; cy: 295; } 100% { cx: 280; cy: 295; } }
+    @keyframes anim-2 { 0% { cx: 400; cy: 265; } 100% { cx: 520; cy: 200; } }
+    @keyframes anim-3 { 0% { cx: 520; cy: 200; } 100% { cx: 400; cy: 265; } }
+    @keyframes anim-4 { 0% { cx: 280; cy: 325; } 100% { cx: 160; cy: 325; } }
+  </style>
+
+  <!-- BACKGROUND GRID -->
+  <rect width="1100" height="620" fill="#0d1117" />
+  <g opacity="0.1">
+    <line x1="0" y1="100" x2="1100" y2="100" stroke="#30363d" stroke-width="0.5" />
+    <line x1="0" y1="200" x2="1100" y2="200" stroke="#30363d" stroke-width="0.5" />
+    <line x1="0" y1="300" x2="1100" y2="300" stroke="#30363d" stroke-width="0.5" />
+    <line x1="0" y1="400" x2="1100" y2="400" stroke="#30363d" stroke-width="0.5" />
+    <line x1="0" y1="500" x2="1100" y2="500" stroke="#30363d" stroke-width="0.5" />
+  </g>
+
+  <!-- TOP RIGHT LEGEND -->
+  <g transform="translate(680, 25)">
+    <rect width="395" height="45" rx="6" fill="#161b22" stroke="#30363d" stroke-width="1.5" />
+    <text x="15" y="27" class="legend-title">Sockets: Presence Logging &</text>
+    <text x="235" y="27" class="sub-title">Rate Limiting System Design</text>
+  </g>
+
+  <!-- COMPONENT NODES -->
+
+  <!-- 1. Client -->
+  <g transform="translate(30, 250)">
+    <rect width="130" height="120" class="node-box" />
+    <rect x="35" y="25" width="60" height="50" rx="3" class="icon icon-accent" />
+    <rect x="40" y="30" width="50" height="25" rx="1" fill="#0d1117" />
+    <rect x="50" y="62" width="30" height="5" rx="2" class="icon icon-accent" />
+    <text x="65" y="95" text-anchor="middle" class="title">Client</text>
+    <text x="65" y="108" text-anchor="middle" class="sub-title">POST /heartbeat</text>
+  </g>
+
+  <!-- 2. API Service (Gin Router) -->
+  <g transform="translate(280, 250)">
+    <rect width="120" height="120" class="node-box" />
+    <path d="M 60 20 L 95 40 L 95 80 L 60 100 L 25 80 L 25 40 Z" class="icon icon-accent" fill="#0d1117" />
+    <text x="60" y="95" text-anchor="middle" class="title">API Service</text>
+    <text x="60" y="108" text-anchor="middle" class="sub-title">Gin Router</text>
+  </g>
+
+  <!-- 3. Redis Cache (Active for Hit/Deduplication) -->
+  <g transform="translate(520, 130)">
+    <rect width="130" height="120" class="node-box" />
+    <ellipse cx="65" cy="40" rx="35" ry="12" class="icon icon-green" />
+    <path d="M 30 40 L 30 70 A 35 12 0 0 0 100 70 L 100 40" class="icon icon-green" fill="#0d1117" />
+    <path d="M 65 52 L 58 65 H 72 L 65 78" stroke="#238636" stroke-width="2.5" fill="none" stroke-linecap="round" />
+    <text x="65" y="95" text-anchor="middle" class="title" fill="#238636">Redis Cache</text>
+    <text x="65" y="108" text-anchor="middle" class="sub-title" fill="#238636">Rate-Limit Hit (Dedup)</text>
+  </g>
+
+  <!-- 4. RabbitMQ Queue (Dimmed - Skipped/Deduplicated) -->
+  <g transform="translate(520, 370)" opacity="0.3">
+    <rect width="130" height="120" class="node-box-dim" />
+    <rect x="30" y="30" width="70" height="40" rx="3" class="icon" fill="#0d1117" />
+    <text x="65" y="95" text-anchor="middle" class="sub-title">RabbitMQ (Skipped)</text>
+  </g>
+
+  <!-- 5. Background Worker (Dimmed) -->
+  <g transform="translate(770, 370)" opacity="0.3">
+    <rect width="120" height="120" class="node-box-dim" />
+    <path d="M 60 20 L 95 40 L 95 80 L 60 100 L 25 80 L 25 40 Z" class="icon" fill="#0d1117" />
+    <text x="60" y="95" text-anchor="middle" class="sub-title">Worker</text>
+  </g>
+
+  <!-- 6. PostgreSQL DB (Dimmed) -->
+  <g transform="translate(1010, 250)" opacity="0.3">
+    <rect width="120" height="120" class="node-box-dim" />
+    <ellipse cx="60" cy="35" rx="35" ry="12" class="icon" fill="#0d1117" />
+    <text x="60" y="115" text-anchor="middle" class="sub-title">PostgreSQL</text>
+  </g>
+
+
+  <!-- CONNECTING PATHS (POST Request Cache Hit / Dedup Flow) -->
+
+  <!-- A: Client -> API Service -->
+  <path d="M 160 295 L 280 295" class="flow-path" />
+  <text x="200" y="285" class="sub-title">Heartbeat</text>
+  <circle r="6" class="packet motion-client-api" />
+
+  <!-- B1: API -> Redis (ZScore Rate-Limit Check) -->
+  <path d="M 400 265 L 520 200" class="flow-path-green" />
+  <text x="430" y="220" fill="#238636" font-size="11">ZScore Check</text>
+  <circle r="6" class="packet-green motion-api-redis" />
+
+  <!-- B2: Redis -> API (Hit Found -> Skip Publish) -->
+  <path d="M 520 200 L 400 265" class="flow-path-green" stroke-dasharray="none" />
+  <text x="430" y="250" fill="#238636" font-size="10">Active Within Window (Dedup)</text>
+  <circle r="5" class="packet-green motion-redis-api" />
+
+  <!-- C: API -> Client (HTTP 200 OK - No MQ Publish) -->
+  <path d="M 280 325 L 160 325" class="flow-path-green" stroke-dasharray="none" />
+  <text x="200" y="340" fill="#238636" font-size="11">HTTP 200 OK (Skipped MQ)</text>
+  <circle r="6" class="packet-green motion-api-client" />
+
+</svg>
