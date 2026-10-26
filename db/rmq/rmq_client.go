@@ -50,6 +50,25 @@ func InitRMQ(url string) error {
 	return nil
 }
 
+func CloseRMQ() {
+	const handlerName = "close-rmq"
+	if RmqClient == nil {
+		return
+	}
+	if RmqClient.Channel != nil {
+		if err := RmqClient.Channel.Close(); err != nil {
+			log.Printf("[%s] Error closing channel: %v", handlerName, err)
+		}
+	}
+	if RmqClient.Conn != nil {
+		if err := RmqClient.Conn.Close(); err != nil {
+			log.Printf("[%s] Error closing connection: %v", handlerName, err)
+		}
+	}
+	log.Printf("[%s] Connection and channel closed successfully", handlerName)
+}
+
+
 func DeclareExchange(exchangeName string) error {
 	const handlerName = "declare-rmq-exchange"
 
@@ -127,8 +146,10 @@ func StartConsumer(ctx context.Context, q *amqp091.Queue, handler func(*Event) e
 		return fmt.Errorf("[%s] Could not start consumer. No handler assigned", handlerName)
 	}
 
-	ch := RmqClient.Channel
-
+	ch, err := RmqClient.Conn.Channel()
+    if err != nil {
+        return fmt.Errorf("[%s] Failed to open consumer channel: %w", handlerName, err)
+    }
 	// Start consuming from the queue
 	msgs, err := ch.Consume(
 		q.Name,           // queue
@@ -140,15 +161,20 @@ func StartConsumer(ctx context.Context, q *amqp091.Queue, handler func(*Event) e
 		nil,              // args
 	)
 	if err != nil {
+		ch.Close()
 		return fmt.Errorf("[%s] Failed to register a consumer: %w", handlerName, err)
 	}
 
 	// Run the consumer loop in a background goroutine
 	go func() {
+		// Ensure the dedicated consumer channel closes when context cancels
+		defer ch.Close()
+
 		for {
 			select {
 			case <-ctx.Done():
-				log.Printf("[%s] Shutting down presence consumer...", handlerName)
+				_ = ch.Cancel(q.Name+"-worker", false)
+				log.Printf("[%s] Shutting down %s consumer...", handlerName, q.Name)
 				return
 			case d, ok := <-msgs:
 				if !ok {
@@ -163,7 +189,7 @@ func StartConsumer(ctx context.Context, q *amqp091.Queue, handler func(*Event) e
 
 					// 1. Unmarshal the event payload
 					var ev Event
-					if err := json.Unmarshal(d.Body, &ev); err != nil {
+					if err := json.Unmarshal(msg.Body, &ev); err != nil {
 						log.Printf("[%s] Failed to unmarshal event: %v", handlerName, err)
 						// Reject/nack the message without requeueing if it's malformed. Triggers DLQ
 						_ = msg.Nack(false, false)
@@ -175,7 +201,7 @@ func StartConsumer(ctx context.Context, q *amqp091.Queue, handler func(*Event) e
 					if err == nil{
 						// Acknowledge successful processing
 						_ = msg.Ack(false)
-						log.Printf("[%s] Successfully persisted presence for acct %s", handlerName, ev.AcctID)
+						log.Printf("[%s] Successfully executed handler", handlerName)
 						return
 
 					} else {
@@ -186,7 +212,7 @@ func StartConsumer(ctx context.Context, q *amqp091.Queue, handler func(*Event) e
 						if retryCount >= env.RmqMaxRetries {
 							log.Printf("[%s] Max retries reached. Sending message to Dead Letter Queue (DLQ).", workerName)
 							// Setting requeue to false triggers the x-dead-letter-exchange routing
-							_ = d.Nack(false, false) 
+							_ = msg.Nack(false, false) 
 							return
 						}
 
@@ -194,35 +220,16 @@ func StartConsumer(ctx context.Context, q *amqp091.Queue, handler func(*Event) e
 						time.Sleep(2 * time.Second)
 
 						// Increment retry count in headers and re-queue
-						incrementAndRequeue(d, ch)
+						incrementAndRequeue(msg, ch)
 					}
 				}(d)
 			}
 		}
 	}()
 
-	log.Printf("[%s] Background presence consumer started successfully", handlerName)
+	log.Printf("[%s] Background %s consumer started successfully", handlerName, q.Name)
 	return nil
 }
-
-func CloseRMQ() {
-	const handlerName = "close-rmq"
-	if RmqClient == nil {
-		return
-	}
-	if RmqClient.Channel != nil {
-		if err := RmqClient.Channel.Close(); err != nil {
-			log.Printf("[%s] Error closing channel: %v", handlerName, err)
-		}
-	}
-	if RmqClient.Conn != nil {
-		if err := RmqClient.Conn.Close(); err != nil {
-			log.Printf("[%s] Error closing connection: %v", handlerName, err)
-		}
-	}
-	log.Printf("[%s] Connection and channel closed successfully", handlerName)
-}
-
 
 // Helper to read current retry count from AMQP headers
 func getRetryCount(headers amqp091.Table) int {
@@ -270,4 +277,16 @@ func incrementAndRequeue(msg amqp091.Delivery, ch *amqp091.Channel) {
 		// Fallback if republication fails: Nack with requeue
 		_ = msg.Nack(false, true)
 	}
+}
+
+func StopConsumer(q *amqp091.Queue) error{
+	const handlerName = "stop-rmq-consumer"
+	err := RmqClient.Channel.Cancel(
+		q.Name + "-worker", // consumer tag used during Consume()
+		false,              // noWait (false means wait for server confirmation)
+	)
+	if err != nil {
+		return fmt.Errorf("[%s] Failed to unregister a consumer: %w", handlerName, err)
+	}
+	return nil
 }

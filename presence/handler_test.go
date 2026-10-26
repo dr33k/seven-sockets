@@ -16,6 +16,7 @@ import (
 	"github.com/rabbitmq/amqp091-go"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"seven.com/sockets/auth"
 	"seven.com/sockets/db/pgdb"
 	"seven.com/sockets/db/rdsdb"
@@ -25,6 +26,7 @@ import (
 )
 
 var testInfra *testutil.TestInfra
+var presenceQ *amqp091.Queue
 
 func TestMain(m *testing.M) {
 	env.InitEnv()
@@ -41,7 +43,6 @@ func TestMain(m *testing.M) {
 		panic(fmt.Sprintf("Failed to setup Test Redis Client: %v", err))
 	}
 
-	// 2. Override env/clients with test container endpoints
 	if err := pgdb.InitPostgres(ctx, testInfra.PgUrl); err != nil {
 		panic(fmt.Sprintf("Failed to setup Test Postgres Connection Pool: %v", err))
 	}
@@ -54,30 +55,12 @@ func TestMain(m *testing.M) {
 	if err := rmq.DeclareExchange(env.RmqPresenceExName); err != nil {
 		panic(err.Error())
 	}
-
-	//----------------------Rmq Presence DLQ and Main Queue---------------
-
-	dlxName := env.RmqPresenceExName+"_dlx"
-	dlqName:= env.RmqPresenceQueueName+"_dlx"
-
-	//Dead Letter Queue
-	_, dlerr := rmq.DeclareQueue(dlqName, dlxName, env.RmqPresenceDlxRoutingKey, nil)
-	if dlerr != nil {
-		panic(dlerr.Error())
-	}
-
-	qargs := amqp091.Table{
-		"x-dead-letter-exchange":    dlxName,
-		"x-dead-letter-routing-key": env.RmqPresenceDlxRoutingKey,
-	}
-	//Main Queue
-	_, err = rmq.DeclareQueue(env.RmqPresenceQueueName, env.RmqPresenceExName, env.RmqPresenceRoutingKey, qargs)
+	//Rmq Queues
+	q, err := DeclarePresenceQueues()
 	if err != nil {
 		panic(err.Error())
 	}
-
-	//-----------------------------------------------------------------------
-
+	presenceQ = q
 	
 	// Run tests
 	code := m.Run()
@@ -293,4 +276,127 @@ func TestGetLastSeen_NotFound(t *testing.T) {
 	// Assertions
 	assert.Equal(t, http.StatusNotFound, w.Code)
 	assert.Contains(t, w.Body.String(), "Presence record not found")
+}
+
+//Test 7: TestPresencePersistence_Success
+func TestPresencePersistence_Success(t *testing.T) {
+	ctx := context.Background()
+	acctID := uuid.New().String()
+	now := time.Now().UTC()
+
+	//Start Consumer
+	bgCtx, bgCancel := context.WithCancel(context.Background())
+	defer bgCancel()
+	
+	go func() {
+		if err := rmq.StartConsumer(bgCtx, presenceQ, PersistPresence); err != nil {
+			log.Println(err.Error())
+		}
+	}()
+	defer rmq.StopConsumer(presenceQ)
+	
+	event := rmq.Event{
+		Type: "HEARTBEAT",
+	    AcctID:    acctID,
+	    Timestamp: now.Unix(),
+	}
+
+	body, err := json.Marshal(event)
+	require.NoError(t, err)
+
+	// 1. Publish event to the main exchange
+	err = rmq.RmqClient.Channel.PublishWithContext(
+		ctx,
+		env.RmqPresenceExName,
+		env.RmqPresenceRoutingKey,
+		false,
+		false,
+		amqp091.Publishing{
+			ContentType: "application/json",
+			Body:        body,
+		},
+	)
+	require.NoError(t, err)
+
+	// 2. Poll PostgreSQL with a timeout until the worker processes and upserts it
+	var retrievedTime time.Time
+	query := `SELECT last_seen FROM acct_presence WHERE acct_id = $1`
+
+	assert.Eventually(t, func() bool {
+		row := pgdb.DB.QueryRow(ctx, query, acctID)
+		err := row.Scan(&retrievedTime)
+		return err == nil
+	}, 5*time.Second, 100*time.Millisecond, "Timed out waiting for presence record to persist in DB")
+
+	// 3. Validate correctness
+	assert.WithinDuration(t, now, retrievedTime, time.Second)
+}
+
+
+//Test 8: TestPresencePersistence_MaxRetriesToDLQ
+func TestPresencePersistence_MaxRetriesToDLQ(t *testing.T) {
+	log.Println("Begin TestPresencePersistence_MaxRetriesToDLQ")
+
+	ctx := context.Background()
+	acctID := "invalid-id"
+	now := time.Now().UTC()
+	
+	//Start Consumer
+	bgCtx, bgCancel := context.WithCancel(context.Background())
+	defer bgCancel()
+	
+	go func() {
+		if err := rmq.StartConsumer(bgCtx, presenceQ, PersistPresence); err != nil {
+			log.Println(err.Error())
+		}
+	}()
+	defer rmq.StopConsumer(presenceQ)
+	
+	event := rmq.Event{
+		Type: "HEARTBEAT",
+	    AcctID:    acctID,
+	    Timestamp: now.Unix(),
+	}
+
+	body, err := json.Marshal(event)
+	require.NoError(t, err)
+
+	// 1. Publish a message designed to fail processing
+	err = rmq.RmqClient.Channel.PublishWithContext(
+		ctx,
+		env.RmqPresenceExName,
+		env.RmqPresenceRoutingKey,
+		false,
+		false,
+		amqp091.Publishing{
+			ContentType: "application/json",
+			Body:        body,
+			// Optional: Pre-set headers to simulate failing attempts if testing consumer helper logic directly
+			Headers: amqp091.Table{
+				"x-retry-count": int32(3), // Already at max retries
+			},
+		},
+	)
+	require.NoError(t, err)
+
+	// 2. Wait for the consumer to process and route the message to the DLQ using Eventually
+	var msg amqp091.Delivery
+	var ok bool
+
+	assert.Eventually(t, func() bool {
+		var err error
+		msg, ok, err = rmq.RmqClient.Channel.Get(env.RmqPresenceQueueName+"_dlq", false)
+		return err == nil && ok
+	}, 3*time.Second, 100*time.Millisecond, "Expected message to be routed to DLQ after reaching max retries, but DLQ was empty")
+
+	// 3. Validate that it is indeed our failing message
+	var dlqEvent rmq.Event
+	err = json.Unmarshal(msg.Body, &dlqEvent)
+	require.NoError(t, err)
+	assert.Equal(t, acctID, dlqEvent.AcctID)
+
+	// Clean up message from DLQ
+	_ = msg.Ack(false)
+
+	log.Println("End TestPresencePersistence_MaxRetriesToDLQ")
 }

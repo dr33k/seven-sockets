@@ -15,8 +15,7 @@ func PubEvent(exchange, routingKey string, event Event) error{
 
 	bytes, err := json.Marshal(event)
 	if err != nil {
-		return fmt.Errorf("[%s] RabbitMQ client not initialized", handlerName)
-
+		return fmt.Errorf("[%s] Could not marshal event: %v", handlerName, err)
 	}
 
 	err = RmqClient.Channel.Publish(

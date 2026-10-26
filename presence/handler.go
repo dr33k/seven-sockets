@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/rabbitmq/amqp091-go"
 	"github.com/redis/go-redis/v9"
 	"seven.com/sockets/auth"
 	"seven.com/sockets/db/pgdb"
@@ -17,36 +16,6 @@ import (
 	"seven.com/sockets/db/rmq"
 	"seven.com/sockets/env"
 )
-
-func StartMQWorkers(ctx context.Context) error {
-	dlxName := env.RmqPresenceExName+"_dlx"
-	dlqName:= env.RmqPresenceQueueName+"_dlx"
-
-	//Dead Letter Queue
-	_, dlerr := rmq.DeclareQueue(dlqName, dlxName, env.RmqPresenceDlxRoutingKey, nil)
-	if dlerr != nil {
-		return dlerr
-	}
-
-	qargs := amqp091.Table{
-		"x-dead-letter-exchange":    dlxName,
-		"x-dead-letter-routing-key": env.RmqPresenceDlxRoutingKey,
-	}
-
-	//Main Queue
-	q, err := rmq.DeclareQueue(env.RmqPresenceQueueName, env.RmqPresenceExName, env.RmqPresenceRoutingKey, qargs)
-	if err != nil {
-		return err
-	}
-
-	//Rmq Consumer worker
-	go func() {
-		if err := rmq.StartConsumer(ctx, q, PersistPresence); err != nil {
-			log.Println(err.Error())
-		}
-	}()
-	return nil
-}
 
 func LogPresence(c *gin.Context) {
 	const handlerName = "log-presence-handler"
@@ -131,7 +100,7 @@ func PersistPresence(event *rmq.Event) error {
 			`
 			_, err := pgdb.DB.Exec(ctx, query, event.AcctID, event.Timestamp)
 			if err != nil {
-				log.Printf("[%s] Failed to persiste heartbeat to DB: %v", handlerName, err)
+				log.Printf("[%s] Failed to persist heartbeat to DB: %v", handlerName, err)
 				return err
 			}
 

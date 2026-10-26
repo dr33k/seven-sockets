@@ -48,16 +48,27 @@ func main() {
 		log.Fatalln(err.Error())
 	}
 	defer rmq.CloseRMQ()
+
 	//Rmq Exchanges
 	if err := rmq.DeclareExchange(env.RmqPresenceExName); err != nil {
 		log.Fatalln(err.Error())
 	}
-	//Start MQ Workers
-	bgCtx, bgCancel := context.WithCancel(context.Background())
-	defer bgCancel()
-	if err := presence.StartMQWorkers(bgCtx); err != nil {
+
+	//Rmq Queues
+	q, err := presence.DeclarePresenceQueues()
+	if err != nil {
 		log.Fatalln(err.Error())
 	}
+
+	//Start Rmq Consumers
+	bgCtx, bgCancel := context.WithCancel(context.Background())
+	defer bgCancel()
+	
+	go func() {
+		if err := rmq.StartConsumer(bgCtx, q, presence.PersistPresence); err != nil {
+			log.Println(err.Error())
+		}
+	}()
 
 	//Init Gin Router
 	router := gin.Default()
