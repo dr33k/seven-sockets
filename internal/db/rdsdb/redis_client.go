@@ -6,7 +6,7 @@ import (
 	"log"
 
 	"github.com/redis/go-redis/v9"
-	"seven.com/sockets/env"
+	"seven.com/sockets/pkg/env"
 )
 
 var RedisClient *redis.Client

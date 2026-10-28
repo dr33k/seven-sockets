@@ -1,15 +1,14 @@
 package presence
 
 import (
-
 	"github.com/rabbitmq/amqp091-go"
-	"seven.com/sockets/db/rmq"
-	"seven.com/sockets/env"
+	"seven.com/sockets/internal/db/rmq"
+	"seven.com/sockets/pkg/env"
 )
 
-func DeclarePresenceQueues()(*amqp091.Queue, error){
-	dlxName := env.RmqPresenceExName+"_dlx"
-	dlqName:= env.RmqPresenceQueueName+"_dlq"
+func DeclarePresenceQueues() (*amqp091.Queue, error) {
+	dlxName := env.RmqPresenceExName + "_dlx"
+	dlqName := env.RmqPresenceQueueName + "_dlq"
 
 	//Dead Letter Queue
 	_, dlerr := rmq.DeclareQueue(dlqName, dlxName, env.RmqPresenceDlxRoutingKey, nil)

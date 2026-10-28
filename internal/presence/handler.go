@@ -10,11 +10,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
-	"seven.com/sockets/auth"
-	"seven.com/sockets/db/pgdb"
-	"seven.com/sockets/db/rdsdb"
-	"seven.com/sockets/db/rmq"
-	"seven.com/sockets/env"
+	"seven.com/sockets/internal/db/pgdb"
+	"seven.com/sockets/internal/db/rdsdb"
+	"seven.com/sockets/internal/db/rmq"
+	"seven.com/sockets/pkg/auth"
+	"seven.com/sockets/pkg/env"
 )
 
 func LogPresence(c *gin.Context) {
@@ -130,12 +130,12 @@ func GetLastSeen(c *gin.Context) {
 
 	var lastSeenTime time.Time
 
-	if err == nil{ //Cache hit
-	// Redis ZScore returns float64 (epoch seconds)
+	if err == nil { //Cache hit
+		// Redis ZScore returns float64 (epoch seconds)
 		score := rdsLastSeen.Val()
 		lastSeenTime = time.Unix(int64(score), 0)
 
-	}else if errors.Is(err, redis.Nil) { //Cache miss: Fetch from DB
+	} else if errors.Is(err, redis.Nil) { //Cache miss: Fetch from DB
 
 		log.Printf("[%s] Cache miss for acct %s, falling back to database", handlerName, acctID)
 
@@ -156,7 +156,7 @@ func GetLastSeen(c *gin.Context) {
 			Member: acctID,
 		}).Err()
 
-	} else{
+	} else {
 		log.Printf("[%s] Error fetching last seen score from redis: %v", handlerName, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"msg": "An error occured on our end, please contact administrator"})
 		return
@@ -164,7 +164,7 @@ func GetLastSeen(c *gin.Context) {
 
 	log.Printf("[%s] Successsfully retrieved last seen records for acct %s", handlerName, acctID)
 	c.JSON(http.StatusOK, gin.H{
-		"acct_id": acctID,
+		"acct_id":   acctID,
 		"last_seen": lastSeenTime.Format(time.RFC3339),
 	})
 }

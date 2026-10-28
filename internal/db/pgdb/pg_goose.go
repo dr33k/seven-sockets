@@ -8,7 +8,7 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
-	"seven.com/sockets/env"
+	"seven.com/sockets/pkg/env"
 )
 
 //go:embed migrations/*.sql

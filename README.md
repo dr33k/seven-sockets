@@ -1,6 +1,6 @@
 ## SEVEN SOCKETS
 
-Instant Messaging Application built with Go. 
+Instant Messaging Application built with Go. Modular monolith.
 
 Uses Seven ID for Authentication, Authorization and Auditing.
 

@@ -17,12 +17,12 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"seven.com/sockets/auth"
-	"seven.com/sockets/db/pgdb"
-	"seven.com/sockets/db/rdsdb"
-	"seven.com/sockets/db/rmq"
-	"seven.com/sockets/env"
-	"seven.com/sockets/testutil"
+	"seven.com/sockets/internal/db/pgdb"
+	"seven.com/sockets/internal/db/rdsdb"
+	"seven.com/sockets/internal/db/rmq"
+	"seven.com/sockets/internal/testutil"
+	"seven.com/sockets/pkg/auth"
+	"seven.com/sockets/pkg/env"
 )
 
 var testInfra *testutil.TestInfra
@@ -61,7 +61,7 @@ func TestMain(m *testing.M) {
 		panic(err.Error())
 	}
 	presenceQ = q
-	
+
 	// Run tests
 	code := m.Run()
 
@@ -167,12 +167,12 @@ func TestLogPresence_Deduplicated(t *testing.T) {
 	bodyBytes, err := testutil.ReadRMQMessage(t, env.RmqPresenceQueueName, 5*time.Second)
 
 	//Assert that the first presence log was delivered from the mq
-	if assert.NoError(t, err, "First presence log expected but recieved no event from kafka"){
+	if assert.NoError(t, err, "First presence log expected but recieved no event from kafka") {
 		var ev *rmq.Event
 		err = json.Unmarshal(bodyBytes, &ev)
 
-		if assert.NoError(t, err, fmt.Sprintf("Expected no JSON unmarshalling error but got one: %v", err)){
-			assert.Equal(t, ev.AcctID, acctID,"Expected first presence log's acctId and MQ event's acctId to be equal but was not")
+		if assert.NoError(t, err, fmt.Sprintf("Expected no JSON unmarshalling error but got one: %v", err)) {
+			assert.Equal(t, ev.AcctID, acctID, "Expected first presence log's acctId and MQ event's acctId to be equal but was not")
 		}
 	}
 
@@ -196,7 +196,7 @@ func TestGetLastSeen_CacheHit(t *testing.T) {
 		Member: acctID,
 	}).Err()
 	assert.NoError(t, err)
-	
+
 	// Ensure cleanup after test
 	defer rdsdb.RedisClient.ZRem(ctx, env.RedisPresenceKey, acctID)
 
@@ -210,7 +210,7 @@ func TestGetLastSeen_CacheHit(t *testing.T) {
 
 	// 3. Assertions
 	assert.Equal(t, http.StatusOK, w.Code)
-	
+
 	// Optional: verify response body contains the correct timestamp string
 	expectedTimeStr := now.Format(time.RFC3339)
 	assert.Contains(t, w.Body.String(), acctID)
@@ -278,7 +278,7 @@ func TestGetLastSeen_NotFound(t *testing.T) {
 	assert.Contains(t, w.Body.String(), "Presence record not found")
 }
 
-//Test 7: TestPresencePersistence_Success
+// Test 7: TestPresencePersistence_Success
 func TestPresencePersistence_Success(t *testing.T) {
 	ctx := context.Background()
 	acctID := uuid.New().String()
@@ -287,18 +287,18 @@ func TestPresencePersistence_Success(t *testing.T) {
 	//Start Consumer
 	bgCtx, bgCancel := context.WithCancel(context.Background())
 	defer bgCancel()
-	
+
 	go func() {
 		if err := rmq.StartConsumer(bgCtx, presenceQ, PersistPresence); err != nil {
 			log.Println(err.Error())
 		}
 	}()
 	defer rmq.StopConsumer(presenceQ)
-	
+
 	event := rmq.Event{
-		Type: "HEARTBEAT",
-	    AcctID:    acctID,
-	    Timestamp: now.Unix(),
+		Type:      "HEARTBEAT",
+		AcctID:    acctID,
+		Timestamp: now.Unix(),
 	}
 
 	body, err := json.Marshal(event)
@@ -332,30 +332,29 @@ func TestPresencePersistence_Success(t *testing.T) {
 	assert.WithinDuration(t, now, retrievedTime, time.Second)
 }
 
-
-//Test 8: TestPresencePersistence_MaxRetriesToDLQ
+// Test 8: TestPresencePersistence_MaxRetriesToDLQ
 func TestPresencePersistence_MaxRetriesToDLQ(t *testing.T) {
 	log.Println("Begin TestPresencePersistence_MaxRetriesToDLQ")
 
 	ctx := context.Background()
 	acctID := "invalid-id"
 	now := time.Now().UTC()
-	
+
 	//Start Consumer
 	bgCtx, bgCancel := context.WithCancel(context.Background())
 	defer bgCancel()
-	
+
 	go func() {
 		if err := rmq.StartConsumer(bgCtx, presenceQ, PersistPresence); err != nil {
 			log.Println(err.Error())
 		}
 	}()
 	defer rmq.StopConsumer(presenceQ)
-	
+
 	event := rmq.Event{
-		Type: "HEARTBEAT",
-	    AcctID:    acctID,
-	    Timestamp: now.Unix(),
+		Type:      "HEARTBEAT",
+		AcctID:    acctID,
+		Timestamp: now.Unix(),
 	}
 
 	body, err := json.Marshal(event)

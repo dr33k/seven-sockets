@@ -12,17 +12,17 @@ import (
 	postgrescontainer "github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/modules/rabbitmq"
 	rediscontainer "github.com/testcontainers/testcontainers-go/modules/redis"
-	"seven.com/sockets/db/pgdb"
-	"seven.com/sockets/db/rmq"
+	"seven.com/sockets/internal/db/pgdb"
+	"seven.com/sockets/internal/db/rmq"
 )
 
 type TestInfra struct {
-	PGContainer    *postgrescontainer.PostgresContainer
-	RedisContainer *rediscontainer.RedisContainer
+	PGContainer     *postgrescontainer.PostgresContainer
+	RedisContainer  *rediscontainer.RedisContainer
 	RabbitContainer *rabbitmq.RabbitMQContainer
-	PgUrl          string
-	RedisUrl       string
-	RmqUrl  string
+	PgUrl           string
+	RedisUrl        string
+	RmqUrl          string
 }
 
 const REL_PG_MIGRATIONS_PATH = "../db/pgdb/migrations"
@@ -99,12 +99,12 @@ func SetupTestInfra(ctx context.Context) (*TestInfra, error) {
 	log.Println("[test-infra] Testcontainers (PG, Redis, RabbitMQ) successfully initialized")
 
 	return &TestInfra{
-		PGContainer:    pgContainer,
-		RedisContainer: redisC,
+		PGContainer:     pgContainer,
+		RedisContainer:  redisC,
 		RabbitContainer: rabbitContainer,
-		PgUrl:          connStr,
-		RedisUrl:       redisParsedEndpoint.Addr,
-		RmqUrl:  amqpURL,
+		PgUrl:           connStr,
+		RedisUrl:        redisParsedEndpoint.Addr,
+		RmqUrl:          amqpURL,
 	}, nil
 }
 
@@ -120,7 +120,7 @@ func (t *TestInfra) Teardown(ctx context.Context, cancel context.CancelFunc) {
 		_ = t.RedisContainer.Terminate(ctx)
 	}
 	if t != nil && t.RabbitContainer != nil {
-		_=t.RabbitContainer.Terminate(ctx)
+		_ = t.RabbitContainer.Terminate(ctx)
 	}
 	cancel()
 	log.Println("[test-infra] Testcontainers terminated")

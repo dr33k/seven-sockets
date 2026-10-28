@@ -7,7 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
-	"seven.com/sockets/env"
+	"seven.com/sockets/pkg/env"
 )
 
 func JwtMW() gin.HandlerFunc {

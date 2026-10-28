@@ -6,12 +6,12 @@ import (
 	"testing"
 	"time"
 
-	"seven.com/sockets/db/rmq"
+	"seven.com/sockets/internal/db/rmq"
 )
 
 // ReadRabbitMQMessage pulls a single message synchronously from a queue with a timeout
 func ReadRMQMessage(t testing.TB, queueName string, timeout time.Duration) ([]byte, error) {
-	handlerName:="read-rmq-message"
+	handlerName := "read-rmq-message"
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 

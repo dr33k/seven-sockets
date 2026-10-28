@@ -6,8 +6,8 @@ import (
 	"uuid"
 
 	"github.com/golang-jwt/jwt/v5"
-	"seven.com/sockets/auth"
-	"seven.com/sockets/env"
+	"seven.com/sockets/pkg/auth"
+	"seven.com/sockets/pkg/env"
 )
 
 // GenerateTestToken creates a valid token on the fly for testing
@@ -16,7 +16,7 @@ func GenerateTestToken(accountID string, fname string) string {
 	secretKey := []byte(env.JwtSecretKey)
 
 	acctIDStr, err := uuid.Parse(accountID)
-	if err != nil{
+	if err != nil {
 		panic(fmt.Errorf("[%s] Account ID Provided is not a UUID: %w", handlerName, err))
 	}
 	claims := jwt.MapClaims{

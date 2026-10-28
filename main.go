@@ -11,12 +11,12 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"seven.com/sockets/auth"
-	"seven.com/sockets/db/pgdb"
-	"seven.com/sockets/db/rdsdb"
-	"seven.com/sockets/db/rmq"
-	"seven.com/sockets/env"
-	"seven.com/sockets/presence"
+	"seven.com/sockets/internal/db/pgdb"
+	"seven.com/sockets/internal/db/rdsdb"
+	"seven.com/sockets/internal/db/rmq"
+	"seven.com/sockets/internal/presence"
+	"seven.com/sockets/pkg/auth"
+	"seven.com/sockets/pkg/env"
 )
 
 func main() {
@@ -63,7 +63,7 @@ func main() {
 	//Start Rmq Consumers
 	bgCtx, bgCancel := context.WithCancel(context.Background())
 	defer bgCancel()
-	
+
 	go func() {
 		if err := rmq.StartConsumer(bgCtx, q, presence.PersistPresence); err != nil {
 			log.Println(err.Error())
