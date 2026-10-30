@@ -14,6 +14,7 @@ import (
 	"seven.com/sockets/internal/db/pgdb"
 	"seven.com/sockets/internal/db/rdsdb"
 	"seven.com/sockets/internal/db/rmq"
+	"seven.com/sockets/internal/messaging"
 	"seven.com/sockets/internal/presence"
 	"seven.com/sockets/pkg/auth"
 	"seven.com/sockets/pkg/env"
@@ -79,6 +80,8 @@ func main() {
 	{
 		protected.POST("/presence", presence.LogPresence)
 		protected.GET("/presence/:acct_id", presence.GetLastSeen)
+
+		protected.GET("/ws", messaging.HandleWS)
 	}
 
 	//Wrap in HTTP server
