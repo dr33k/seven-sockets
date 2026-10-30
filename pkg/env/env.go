@@ -16,7 +16,7 @@ var RedisPresenceKey = os.Getenv("REDIS_PRESENCE_KEY")
 var rmqMaxRetriesStr = os.Getenv("RMQ_MAX_RETRIES")
 var RmqMaxRetries int
 
-var RmqPresenceExName = os.Getenv("RMQ_PRESENCE_EXCHANGE_NAME")
+var RmqPresenceXName = os.Getenv("RMQ_PRESENCE_EXCHANGE_NAME")
 var RmqPresenceQueueName = os.Getenv("RMQ_PRESENCE_QUEUE_NAME")
 var RmqPresenceRoutingKey = os.Getenv("RMQ_PRESENCE_ROUTING_KEY")
 var RmqPresenceDlxRoutingKey = os.Getenv("RMQ_PRESENCE_DLX_ROUTING_KEY")
@@ -37,17 +37,17 @@ func InitEnv() {
 	if RedisPresenceKey == "" {
 		RedisPresenceKey = "presence:active_users"
 	}
-	if RmqPresenceExName == "" {
-		RmqPresenceExName = "presence_exchange"
+	if RmqPresenceXName == "" {
+		RmqPresenceXName = "presence_exchange"
 	}
 
 	if rmqMaxRetriesStr == "" {
 		rmqMaxRetriesStr = "3"
-	} 
+	}
 	val, err := strconv.Atoi(rmqMaxRetriesStr)
 	if err == nil {
 		RmqMaxRetries = val
-	}else{
+	} else {
 		RmqMaxRetries = 3
 	}
 

@@ -39,7 +39,7 @@ func LogPresence(c *gin.Context) {
 	//Publish Presence event if the account has no cache-recorded heartbeat or if it has been a minute since its last heartbeat
 	acctScore := rdsdb.RedisClient.ZScore(rctx, env.RedisPresenceKey, acctIdStr)
 	if acctScore == nil || now-acctScore.Val() > 60 {
-		err = rmq.PubEvent(env.RmqPresenceExName, env.RmqPresenceRoutingKey, rmq.Event{
+		err = rmq.PubEvent(env.RmqPresenceXName, env.RmqPresenceRoutingKey, rmq.Event{
 			Type:      "HEARTBEAT",
 			AcctID:    acctIdStr,
 			Timestamp: int64(now),

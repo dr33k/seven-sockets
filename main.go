@@ -51,12 +51,12 @@ func main() {
 	defer rmq.CloseRMQ()
 
 	//Rmq Exchanges
-	if err := rmq.DeclareExchange(env.RmqPresenceExName); err != nil {
+	if err := rmq.DeclareExchange(env.RmqPresenceXName); err != nil {
 		log.Fatalln(err.Error())
 	}
 
-	//Rmq Queues
-	q, err := presence.DeclarePresenceQueues()
+	//Rmq Main and DL Queues
+	q, err := rmq.DeclareQueuePair(env.RmqPresenceQueueName, env.RmqPresenceXName, env.RmqPresenceRoutingKey, env.RmqPresenceDlxRoutingKey)
 	if err != nil {
 		log.Fatalln(err.Error())
 	}

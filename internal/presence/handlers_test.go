@@ -52,11 +52,11 @@ func TestMain(m *testing.M) {
 	}
 	log.Printf("RMQ URL:%s", testInfra.RmqUrl)
 	//Rmq Exchanges
-	if err := rmq.DeclareExchange(env.RmqPresenceExName); err != nil {
+	if err := rmq.DeclareExchange(env.RmqPresenceXName); err != nil {
 		panic(err.Error())
 	}
 	//Rmq Queues
-	q, err := DeclarePresenceQueues()
+	q, err :=  rmq.DeclareQueuePair(env.RmqPresenceQueueName, env.RmqPresenceXName, env.RmqPresenceRoutingKey, env.RmqPresenceDlxRoutingKey)
 	if err != nil {
 		panic(err.Error())
 	}
@@ -307,7 +307,7 @@ func TestPresencePersistence_Success(t *testing.T) {
 	// 1. Publish event to the main exchange
 	err = rmq.RmqClient.Channel.PublishWithContext(
 		ctx,
-		env.RmqPresenceExName,
+		env.RmqPresenceXName,
 		env.RmqPresenceRoutingKey,
 		false,
 		false,
@@ -363,7 +363,7 @@ func TestPresencePersistence_MaxRetriesToDLQ(t *testing.T) {
 	// 1. Publish a message designed to fail processing
 	err = rmq.RmqClient.Channel.PublishWithContext(
 		ctx,
-		env.RmqPresenceExName,
+		env.RmqPresenceXName,
 		env.RmqPresenceRoutingKey,
 		false,
 		false,

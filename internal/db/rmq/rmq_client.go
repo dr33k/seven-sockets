@@ -137,6 +137,30 @@ func DeclareQueue(queueName, exchangeName, routingKey string, qargs amqp091.Tabl
 	return &q, nil
 }
 
+func DeclareQueuePair(qName, xName, xRoutingKey, dlxRoutingKey string) (*amqp091.Queue, error) {
+	dlxName := xName + "_dlx"
+	dlqName := qName + "_dlq"
+
+	//Dead Letter Queue
+	_, dlerr := DeclareQueue(dlqName, dlxName, dlxRoutingKey, nil)
+	if dlerr != nil {
+		return nil, dlerr
+	}
+
+	qargs := amqp091.Table{
+		"x-dead-letter-exchange":    dlxName,
+		"x-dead-letter-routing-key": dlxRoutingKey,
+	}
+
+	//Main Queue
+	q, err := DeclareQueue(qName, xName, xRoutingKey, qargs)
+	if err != nil {
+		return nil, err
+	}
+
+	return q, nil
+}
+
 // StartConsumer starts a background worker goroutine to consume and persist presence events
 func StartConsumer(ctx context.Context, q *amqp091.Queue, handler func(*Event) error) error {
 	const handlerName = "start-rmq-consumer"
@@ -259,7 +283,7 @@ func incrementAndRequeue(msg amqp091.Delivery, ch *amqp091.Channel) {
 	// then Ack the old one so it leaves the head of the queue.
 	err := ch.PublishWithContext(
 		context.Background(),
-		env.RmqPresenceExName,
+		env.RmqPresenceXName,
 		msg.RoutingKey,
 		false,
 		false,

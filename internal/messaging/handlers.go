@@ -90,8 +90,6 @@ func HandleWS(ctx *gin.Context) {
 					log.Printf("[%s] Failed to write message from receiver channel to WS: %v", workerName, err)
 					return
 				}
-
-				log.Printf("[%s] Message recieved from message channel and written to WS", workerName)
 			}
 		}
 	}()
