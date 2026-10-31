@@ -54,9 +54,17 @@ func main() {
 	if err := rmq.DeclareExchange(env.RmqPresenceXName); err != nil {
 		log.Fatalln(err.Error())
 	}
+	if err := rmq.DeclareExchange(env.RmqMsgXName); err != nil {
+		log.Fatalln(err.Error())
+	}
 
 	//Rmq Main and DL Queues
-	q, err := rmq.DeclareQueuePair(env.RmqPresenceQueueName, env.RmqPresenceXName, env.RmqPresenceRoutingKey, env.RmqPresenceDlxRoutingKey)
+	presenceQ, err := rmq.DeclareQueuePair(env.RmqPresenceQueueName, env.RmqPresenceXName, env.RmqPresenceRoutingKey, env.RmqPresenceDlxRoutingKey)
+	if err != nil {
+		log.Fatalln(err.Error())
+	}
+
+	msgQ, err := rmq.DeclareQueuePair(env.RmqMsgQueueName, env.RmqMsgXName, env.RmqMsgRoutingKey, env.RmqMsgDlxRoutingKey)
 	if err != nil {
 		log.Fatalln(err.Error())
 	}
@@ -66,10 +74,15 @@ func main() {
 	defer bgCancel()
 
 	go func() {
-		if err := rmq.StartConsumer(bgCtx, q, presence.PersistPresence); err != nil {
+		if err := rmq.StartConsumer(bgCtx, presenceQ, presence.PersistPresence); err != nil {
 			log.Println(err.Error())
 		}
 	}()
+	// go func() {
+	// 	if err := rmq.StartConsumer(bgCtx, msgQ, rmq.PersistMsg); err != nil {
+	// 		log.Println(err.Error())
+	// 	}
+	// }()
 
 	//Init Gin Router
 	router := gin.Default()

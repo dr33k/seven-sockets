@@ -31,4 +31,3 @@ func GetAuthCtx(c *gin.Context)(*AuthContext, error){
 
 	return authCtx ,nil
 }
-
