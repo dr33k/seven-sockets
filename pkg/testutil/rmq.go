@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"seven.com/sockets/internal/db/rmq"
+	"seven.com/sockets/pkg/db/rmq"
 )
 
 // ReadRabbitMQMessage pulls a single message synchronously from a queue with a timeout

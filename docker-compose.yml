@@ -63,11 +63,13 @@ services:
       timeout: 5s
       retries: 5
 
-#  sockets_app:
+#  sockets-app:
 #    image: seven-sockets:latest
 #    container_name: seven-sockets
 #    depends_on:
 #      sockets-db-postgres:
+#        condition: service_healthy
+#      sockets-db-mongodb:
 #        condition: service_healthy
 #    ports:
 #      - "8080:8080"

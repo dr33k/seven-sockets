@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"seven.com/sockets/internal/db/pgdb"
-	"seven.com/sockets/internal/db/rdsdb"
-	"seven.com/sockets/internal/db/rmq"
+	"seven.com/sockets/pkg/db/pgdb"
+	"seven.com/sockets/pkg/db/rdsdb"
+	"seven.com/sockets/pkg/db/rmq"
 	"seven.com/sockets/internal/messaging"
 	"seven.com/sockets/internal/presence"
 	"seven.com/sockets/pkg/auth"

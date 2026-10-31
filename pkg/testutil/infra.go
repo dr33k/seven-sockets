@@ -12,8 +12,8 @@ import (
 	postgrescontainer "github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/modules/rabbitmq"
 	rediscontainer "github.com/testcontainers/testcontainers-go/modules/redis"
-	"seven.com/sockets/internal/db/pgdb"
-	"seven.com/sockets/internal/db/rmq"
+	"seven.com/sockets/pkg/db/pgdb"
+	"seven.com/sockets/pkg/db/rmq"
 )
 
 type TestInfra struct {
