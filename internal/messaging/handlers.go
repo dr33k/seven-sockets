@@ -7,10 +7,13 @@ import (
 	"log"
 	"net/http"
 	"time"
-	"uuid"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"seven.com/sockets/pkg/auth"
+	"seven.com/sockets/pkg/db/mongodb"
+	"seven.com/sockets/pkg/db/rmq"
+	"seven.com/sockets/pkg/env"
 )
 
 var upgrader = websocket.Upgrader{
@@ -19,27 +22,14 @@ var upgrader = websocket.Upgrader{
 	CheckOrigin:     func(r *http.Request) bool { return true },
 }
 
-type Msg struct {
-	Typ   int
-	Bytes []byte
-}
+func OpenWS(ctx *gin.Context) {
+	const handlerName = "open-ws-handler"
 
-type FileAttachment struct {
-	FileID   uuid.UUID `json:"file_id"`
-	FileName string    `json:"file_name"`
-	MimeType string    `json:"mime_type"`
-	Size     int64     `json:"size"`
-}
-
-type Payload struct{
-	To        uuid.UUID        `json:"to"`
-	Content   string           `json:"content"`
-	Attachments []FileAttachment `json:"attachments,omitempty"`
-	Timestamp time.Time        `json:"timestamp"`
-}
-
-func HandleWS(ctx *gin.Context) {
-	const handlerName = "ws-handler"
+	//Retrieve Auth Context
+	authCtx, err := auth.GetAuthCtx(ctx)
+	if err != nil {
+		return
+	}
 
 	//1. Upgrade HTTP connection to a websocket connection
 	conn, err := upgrader.Upgrade(ctx.Writer, ctx.Request, nil)
@@ -51,12 +41,12 @@ func HandleWS(ctx *gin.Context) {
 
 	log.Printf("[%s] New client connected successfully", handlerName)
 
-	msgChan := make(chan *Msg, 256)
-	errChan := make(chan *Msg, 256)
+	msgChan := make(chan RmqMsg, 256)
+	errChan := make(chan RmqMsg, 256)
 
 	// Create a local context/cancel to coordinate clean shutdown between reader and writer
-    writeCtx, cancel := context.WithCancel(context.Background())
-    defer cancel()
+	writeCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	//2. Write loop in spawned goroutine
 	go func() {
@@ -68,7 +58,7 @@ func HandleWS(ctx *gin.Context) {
 				return
 
 			case errMsg, ok := <-errChan:
-				if !ok{
+				if !ok {
 					log.Printf("[%s] Error channel closed", workerName)
 					return
 				}
@@ -80,11 +70,11 @@ func HandleWS(ctx *gin.Context) {
 				}
 
 			case msg, ok := <-msgChan:
-				if !ok{
+				if !ok {
 					log.Printf("[%s] Message channel closed", workerName)
 					return
 				}
-				
+
 				err := conn.WriteMessage(msg.Typ, msg.Bytes)
 				if err != nil {
 					log.Printf("[%s] Failed to write message from receiver channel to WS: %v", workerName, err)
@@ -109,21 +99,39 @@ func HandleWS(ctx *gin.Context) {
 
 		var payload Payload
 		if err := json.Unmarshal(msgBytes, &payload); err != nil {
-			select {
-				case errChan <- &Msg{Typ: msgTyp, Bytes: fmt.Appendf(msgBytes, ": [%s] Invalid message format", handlerName)}:
-				default:
-					log.Printf("[%s] Error channel output buffer full, dropping message", handlerName)
-        	}
 			log.Printf("[%s] Invalid message format: %v", handlerName, err)
-
+			select {
+			case errChan <- RmqMsg{Typ: msgTyp, Bytes: fmt.Appendf(msgBytes, ": [%s] Invalid message format", handlerName)}:
+			default:
+				log.Printf("[%s] Error channel output buffer full, dropping message", handlerName)
+			}
 			continue
 		}
 
-		// Now you can inspect it cleanly:
+		var puberr error
 		if len(payload.Attachments) > 0 {
 			// Route to Object Storage / File Processing Queue
+			puberr = rmq.PubEvent("", "", rmq.Event{
+				AcctID:    authCtx.Account.Id.String(),
+				Type:      "OBJ_STORE",
+				Payload:   payload,
+				Timestamp: time.Now().Unix(),
+			})
+
 		} else {
 			// Route straight to Message Persistence Queue
+			puberr = rmq.PubEvent(env.RmqMsgXName, env.RmqMsgRoutingKey, rmq.Event{
+				AcctID:    authCtx.Account.Id.String(),
+				Type:      "MSG_PERSIST",
+				Payload:   payload,
+				Timestamp: time.Now().Unix(),
+			})
+		}
+
+		if puberr != nil {
+			log.Println(puberr.Error())
+			ctx.JSON(http.StatusInternalServerError, gin.H{"msg": "Unable to send new message event"})
+			return
 		}
 
 		log.Printf("[%s] Passed message: %s to message channel", handlerName, string(msgBytes))
@@ -132,4 +140,53 @@ func HandleWS(ctx *gin.Context) {
 
 	//Cancel writer context
 	cancel()
+}
+
+func PersistMsg(event *rmq.Event) error {
+	const handlerName = "persist-msg-handler"
+
+	if mongodb.DB == nil {
+		return fmt.Errorf("[%s] Uninitialized Mongo DB Pool", handlerName)
+	}
+
+	switch event.Type {
+	case "MSG_PERSIST":
+		{
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
+			payload, err := unmarshalPayloadToBytes(event.Payload)
+			if err != nil {
+				return fmt.Errorf("[%s] Invalid Message Payload %v", handlerName, event)
+			}
+
+			collection := mongodb.DB.Collection("messages")
+
+			_, err = collection.InsertOne(ctx, payload)
+			if err != nil {
+				return fmt.Errorf("[%s] Failed to persist message to DB: %w", handlerName, err)
+			}
+
+			log.Printf("[%s] Successfully persisted message to DB", handlerName)
+			return nil
+		}
+	default:
+		return fmt.Errorf("[%s] Invalid event type for Message persistence: %s", handlerName, event.Type)
+	}
+}
+
+func unmarshalPayloadToBytes(p any) (*Payload, error) {
+	// 1. Marshal the generic payload back into JSON bytes
+	payloadBytes, err := json.Marshal(p)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal event payload: %w", err)
+	}
+
+	// 2. Unmarshal into struct
+	var payload Payload
+	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
+		return nil, fmt.Errorf("failed to decode into Payload struct: %w", err)
+	}
+
+	return &payload, nil
 }

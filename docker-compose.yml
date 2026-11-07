@@ -85,5 +85,6 @@ networks:
 
 volumes:
   postgres_data:
+  mongodb_data:
   redis-data:
     driver: local

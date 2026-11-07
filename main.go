@@ -11,12 +11,13 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"seven.com/sockets/pkg/db/pgdb"
-	"seven.com/sockets/pkg/db/rdsdb"
-	"seven.com/sockets/pkg/db/rmq"
 	"seven.com/sockets/internal/messaging"
 	"seven.com/sockets/internal/presence"
 	"seven.com/sockets/pkg/auth"
+	"seven.com/sockets/pkg/db/mongodb"
+	"seven.com/sockets/pkg/db/pgdb"
+	"seven.com/sockets/pkg/db/rdsdb"
+	"seven.com/sockets/pkg/db/rmq"
 	"seven.com/sockets/pkg/env"
 )
 
@@ -43,6 +44,23 @@ func main() {
 	if err := pgdb.RunMigrations(); err != nil {
 		log.Fatalln(err.Error())
 	}
+
+	//Init MongoDB
+	mongoCtx, mongoCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer mongoCancel()
+	err := mongodb.InitMongoDB(mongoCtx, env.MongoUrl, env.MongoDbName)
+	if err != nil {
+		log.Fatalln(err.Error())
+	}
+
+	// Defer graceful shutdown for mongo
+	defer func() {
+		disconnectCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := mongodb.CloseMongoDB(disconnectCtx); err != nil {
+			log.Fatalln(err.Error())
+		}
+	}()
 
 	//Init RMQ
 	if err := rmq.InitRMQ(env.RmqUrl); err != nil {
@@ -78,11 +96,11 @@ func main() {
 			log.Println(err.Error())
 		}
 	}()
-	// go func() {
-	// 	if err := rmq.StartConsumer(bgCtx, msgQ, rmq.PersistMsg); err != nil {
-	// 		log.Println(err.Error())
-	// 	}
-	// }()
+	go func() {
+		if err := rmq.StartConsumer(bgCtx, msgQ, messaging.PersistMsg); err != nil {
+			log.Println(err.Error())
+		}
+	}()
 
 	//Init Gin Router
 	router := gin.Default()
@@ -94,7 +112,7 @@ func main() {
 		protected.POST("/presence", presence.LogPresence)
 		protected.GET("/presence/:acct_id", presence.GetLastSeen)
 
-		protected.GET("/ws", messaging.HandleWS)
+		protected.GET("/ws", messaging.OpenWS)
 	}
 
 	//Wrap in HTTP server

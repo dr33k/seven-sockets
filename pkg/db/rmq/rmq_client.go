@@ -11,18 +11,6 @@ import (
 	"seven.com/sockets/pkg/env"
 )
 
-type RabbitMQClient struct {
-	Conn    *amqp091.Connection
-	Channel *amqp091.Channel
-}
-
-type Event struct {
-	Type      string `json:"event_type"`
-	AcctID    string `json:"acct_id"`
-	Payload   string `json:"payload"`
-	Timestamp int64  `json:"timestamp"`
-}
-
 var RmqClient *RabbitMQClient
 
 func InitRMQ(url string) error {
@@ -199,13 +187,13 @@ func StartConsumer(ctx context.Context, q *amqp091.Queue, handler func(*Event) e
 				_ = ch.Cancel(q.Name+"-worker", false)
 				log.Printf("[%s] Shutting down %s consumer...", handlerName, q.Name)
 				return
-			case d, ok := <-msgs:
+			case msg, ok := <-msgs:
 				if !ok {
 					log.Printf("[%s] Message channel closed.", handlerName)
 					return
 				}
 				//Launch another goroutine to process the message and retries
-				go func(msg amqp091.Delivery) {
+				go func() {
 					const workerName = "rmq-retry-worker"
 
 					log.Printf("[%s] Received event: %s", handlerName, string(msg.Body))
@@ -219,7 +207,7 @@ func StartConsumer(ctx context.Context, q *amqp091.Queue, handler func(*Event) e
 						return
 					}
 
-					// 2. Persist to PostgreSQL using service/repository layer
+					// 2. Invoke handler
 					err := handler(&ev)
 					if err == nil {
 						// Acknowledge successful processing
@@ -230,9 +218,9 @@ func StartConsumer(ctx context.Context, q *amqp091.Queue, handler func(*Event) e
 					} else {
 						// --- FAILURE HANDLING ---
 						retryCount := getRetryCount(msg.Headers)
-						log.Printf("[%s] Processing failed (Attempt %d/%d): %v", workerName, retryCount+1, env.RmqMaxRetries, err)
+						log.Printf("[%s] Processing failed (Attempt %d/%d)\n%v", workerName, retryCount+1, env.RmqMaxRetries, err)
 
-						if retryCount >= env.RmqMaxRetries {
+						if retryCount+1 >= env.RmqMaxRetries {
 							log.Printf("[%s] Max retries reached. Sending message to Dead Letter Queue (DLQ).", workerName)
 							// Setting requeue to false triggers the x-dead-letter-exchange routing
 							_ = msg.Nack(false, false)
@@ -245,7 +233,7 @@ func StartConsumer(ctx context.Context, q *amqp091.Queue, handler func(*Event) e
 						// Increment retry count in headers and re-queue
 						incrementAndRequeue(msg, ch)
 					}
-				}(d)
+				}()
 			}
 		}
 	}()
@@ -283,7 +271,7 @@ func incrementAndRequeue(msg amqp091.Delivery, ch *amqp091.Channel) {
 	// then Ack the old one so it leaves the head of the queue.
 	err := ch.PublishWithContext(
 		context.Background(),
-		env.RmqPresenceXName,
+		msg.Exchange,
 		msg.RoutingKey,
 		false,
 		false,

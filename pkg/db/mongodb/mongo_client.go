@@ -10,51 +10,49 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
+var Client *mongo.Client
+var DB *mongo.Database
 
-type MongoDB struct{
-	Client *mongo.Client
-	Db *mongo.Database
-}
-
-func InitMongoDB(ctx context.Context, mongoUrl, dbName string)(*MongoDB, error){
+func InitMongoDB(ctx context.Context, mongoUrl, dbName string) error {
 	const componentName = "init-mongodb"
 
 	//Configure client options
-	clientOptions:= options.Client().
+	clientOptions := options.Client().
 		ApplyURI(mongoUrl).
 		SetMaxPoolSize(50).
-		SetConnectTimeout(10*time.Second)
+		SetConnectTimeout(10 * time.Second)
 
 	//Connect to MongoDB
 	client, err := mongo.Connect(clientOptions)
-	if err != nil{
-		return nil, fmt.Errorf("[%s] Failed to create mongo client: %w", componentName, err)
+	if err != nil {
+		return fmt.Errorf("[%s] Failed to create mongo client: %w", componentName, err)
 	}
 
-	//Verify connection using a short lived timeout context
-	pingCtx, cancelPing := context.WithTimeout(ctx, 5*time.Second)
-	defer cancelPing()
-
-	if err := client.Ping(pingCtx, nil); err != nil {
-		return nil, fmt.Errorf("failed to ping mongodb server: %w", err)
+	//Verify connection
+	if err := client.Ping(ctx, nil); err != nil {
+		return fmt.Errorf("[%s] Failed to ping mongodb server: %w", componentName, err)
 	}
 
 	log.Printf("[%s] Successfully connected and verified database: %s", componentName, dbName)
 
-	return &MongoDB{
-		Client: client,
-		Db:     client.Database(dbName),
-	}, nil
+	Client = client
+	DB = client.Database(dbName)
+
+	return nil
 }
 
 // Close gracefully disconnects the MongoDB client.
-func (m *MongoDB) CloseMongoDB(ctx context.Context) error {
-	const componentName = "client-mongodb"
-	
-	if err := m.Client.Disconnect(ctx); err != nil {
-		return fmt.Errorf("failed to disconnect mongodb: %w", err)
+func CloseMongoDB(ctx context.Context) error {
+	const componentName = "close-mongodb"
+
+	if Client != nil {
+		if err := Client.Disconnect(ctx); err != nil {
+			return fmt.Errorf("[%s] Failed to disconnect mongodb: %w", componentName, err)
+		}
+
+		log.Printf("[%s] Connection closed successfully", componentName)
+	} else{
+		log.Printf("[%s] Mongodb Client has not been initialized yet", componentName)
 	}
-	
-	log.Printf("[%s] Connection closed successfully", componentName)
 	return nil
 }

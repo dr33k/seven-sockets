@@ -26,6 +26,8 @@ var RmqMsgQueueName = os.Getenv("RMQ_MSG_QUEUE_NAME")
 var RmqMsgRoutingKey = os.Getenv("RMQ_MSG_ROUTING_KEY")
 var RmqMsgDlxRoutingKey = os.Getenv("RMQ_MSG_DLX_ROUTING_KEY")
 
+var MongoDbName = os.Getenv("MONGO_DB_NAME")
+
 var PgUrl string
 var RmqUrl string
 var MongoUrl string
@@ -58,6 +60,22 @@ func InitEnv() {
 		RmqMaxRetries = val
 	} else {
 		RmqMaxRetries = 3
+	}
+
+	if RmqPresenceXName == "" {
+		RmqPresenceXName = "presence_exchange"
+	}
+
+	if RmqPresenceQueueName == "" {
+		RmqPresenceQueueName = "presence_queue"
+	}
+
+	if RmqPresenceRoutingKey == "" {
+		RmqPresenceRoutingKey = "account.presence.heartbeat"
+	}
+	
+	if RmqPresenceDlxRoutingKey == "" {
+		RmqPresenceDlxRoutingKey = "account.presence.dead"
 	}
 
 	if RmqMsgXName == "" {
@@ -135,7 +153,10 @@ func InitEnv() {
 	}
 	mongoport := os.Getenv("MONGO_PORT")
 	if mongoport == "" {
-		mongoport = "27107"
+		mongoport = "27017"
+	}
+	if MongoDbName == "" {
+		MongoDbName = "sockets-db-mongodb"
 	}
 	MongoUrl = fmt.Sprintf("mongodb://%s:%s@%s:%s/?authSource=admin", mongouser, mongopass, mongohost, mongoport)
 }
