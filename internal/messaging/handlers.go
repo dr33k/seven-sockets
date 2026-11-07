@@ -6,9 +6,12 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/go-playground/validator/v10"
+
 	"github.com/gorilla/websocket"
 	"seven.com/sockets/pkg/auth"
 	"seven.com/sockets/pkg/db/mongodb"
@@ -21,6 +24,8 @@ var upgrader = websocket.Upgrader{
 	WriteBufferSize: 1024,
 	CheckOrigin:     func(r *http.Request) bool { return true },
 }
+
+var validate = validator.New()
 
 func OpenWS(ctx *gin.Context) {
 	const handlerName = "open-ws-handler"
@@ -97,45 +102,53 @@ func OpenWS(ctx *gin.Context) {
 			break
 		}
 
+		//Unmarshal
 		var payload Payload
 		if err := json.Unmarshal(msgBytes, &payload); err != nil {
-			log.Printf("[%s] Invalid message format: %v", handlerName, err)
-			select {
-			case errChan <- RmqMsg{Typ: msgTyp, Bytes: fmt.Appendf(msgBytes, ": [%s] Invalid message format", handlerName)}:
-			default:
-				log.Printf("[%s] Error channel output buffer full, dropping message", handlerName)
-			}
+			writeErrorMsgToWS(err, errChan, msgTyp, msgBytes, handlerName)
 			continue
 		}
 
-		var puberr error
+		now := time.Now()
+		payload.Timestamp = now
+
+		// Validate the struct based on struct tags
+		if err := validate.Struct(&payload); err != nil {
+			writeErrorMsgToWS(err, errChan, msgTyp, msgBytes, handlerName)
+			continue
+		}
+
 		if len(payload.Attachments) > 0 {
 			// Route to Object Storage / File Processing Queue
-			puberr = rmq.PubEvent("", "", rmq.Event{
+			err = rmq.PubEvent("", "", rmq.Event{
 				AcctID:    authCtx.Account.Id.String(),
 				Type:      "OBJ_STORE",
 				Payload:   payload,
-				Timestamp: time.Now().Unix(),
+				Timestamp: now.Unix(),
 			})
 
 		} else {
+			//Validate Empty Content
+			if strings.TrimSpace(payload.Content) == "" {
+				writeErrorMsgToWS(err, errChan, msgTyp, msgBytes, handlerName)
+			}
+
 			// Route straight to Message Persistence Queue
-			puberr = rmq.PubEvent(env.RmqMsgXName, env.RmqMsgRoutingKey, rmq.Event{
+			err = rmq.PubEvent(env.RmqMsgXName, env.RmqMsgRoutingKey, rmq.Event{
 				AcctID:    authCtx.Account.Id.String(),
 				Type:      "MSG_PERSIST",
 				Payload:   payload,
-				Timestamp: time.Now().Unix(),
+				Timestamp: now.Unix(),
 			})
 		}
 
-		if puberr != nil {
-			log.Println(puberr.Error())
+		if err != nil {
+			log.Println(err.Error())
 			ctx.JSON(http.StatusInternalServerError, gin.H{"msg": "Unable to send new message event"})
 			return
 		}
 
 		log.Printf("[%s] Passed message: %s to message channel", handlerName, string(msgBytes))
-
 	}
 
 	//Cancel writer context
@@ -189,4 +202,13 @@ func unmarshalPayloadToBytes(p any) (*Payload, error) {
 	}
 
 	return &payload, nil
+}
+
+func writeErrorMsgToWS(err error, errChan chan RmqMsg, msgTyp int, msgBytes []byte, handlerName string) {
+	log.Printf("[%s] Invalid message format: %v", handlerName, err)
+	select {
+	case errChan <- RmqMsg{Typ: msgTyp, Bytes: fmt.Appendf(msgBytes, ": Invalid message format")}:
+	default:
+		log.Printf("[%s] Error channel output buffer full, dropping message", handlerName)
+	}
 }
