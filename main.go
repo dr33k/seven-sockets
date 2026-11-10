@@ -75,6 +75,9 @@ func main() {
 	if err := rmq.DeclareExchange(env.RmqMsgXName); err != nil {
 		log.Fatalln(err.Error())
 	}
+	if err := rmq.DeclareExchange(env.RmqStatusXName); err != nil {
+		log.Fatalln(err.Error())
+	}
 
 	//Rmq Main and DL Queues
 	presenceQ, err := rmq.DeclareQueuePair(env.RmqPresenceQueueName, env.RmqPresenceXName, env.RmqPresenceRoutingKey, env.RmqPresenceDlxRoutingKey)
@@ -83,6 +86,11 @@ func main() {
 	}
 
 	msgQ, err := rmq.DeclareQueuePair(env.RmqMsgQueueName, env.RmqMsgXName, env.RmqMsgRoutingKey, env.RmqMsgDlxRoutingKey)
+	if err != nil {
+		log.Fatalln(err.Error())
+	}
+
+	statusQ, err := rmq.DeclareQueuePair(env.RmqStatusQueueName, env.RmqStatusXName, env.RmqStatusRoutingKey, env.RmqStatusDlxRoutingKey)
 	if err != nil {
 		log.Fatalln(err.Error())
 	}
@@ -98,6 +106,11 @@ func main() {
 	}()
 	go func() {
 		if err := rmq.StartConsumer(bgCtx, msgQ, messaging.PersistMsg); err != nil {
+			log.Println(err.Error())
+		}
+	}()
+	go func() {
+		if err := rmq.StartConsumer(bgCtx, statusQ, messaging.NotifySender); err != nil {
 			log.Println(err.Error())
 		}
 	}()

@@ -26,6 +26,11 @@ var RmqMsgQueueName = os.Getenv("RMQ_MSG_QUEUE_NAME")
 var RmqMsgRoutingKey = os.Getenv("RMQ_MSG_ROUTING_KEY")
 var RmqMsgDlxRoutingKey = os.Getenv("RMQ_MSG_DLX_ROUTING_KEY")
 
+var RmqStatusXName = os.Getenv("RMQ_STATUS_EXCHANGE_NAME")
+var RmqStatusQueueName = os.Getenv("RMQ_STATUS_QUEUE_NAME")
+var RmqStatusRoutingKey = os.Getenv("RMQ_STATUS_ROUTING_KEY")
+var RmqStatusDlxRoutingKey = os.Getenv("RMQ_STATUS_DLX_ROUTING_KEY")
+
 var MongoDbName = os.Getenv("MONGO_DB_NAME")
 
 var PgUrl string
@@ -87,11 +92,27 @@ func InitEnv() {
 	}
 
 	if RmqMsgRoutingKey == "" {
-		RmqMsgRoutingKey = "account.msg.new"
+		RmqMsgRoutingKey = "msg.new"
 	}
 	
 	if RmqMsgDlxRoutingKey == "" {
-		RmqMsgDlxRoutingKey = "account.msg.dead"
+		RmqMsgDlxRoutingKey = "msg.dead"
+	}
+
+	if RmqStatusXName == "" {
+		RmqStatusXName = "status_exchange"
+	}
+
+	if RmqStatusQueueName == "" {
+		RmqStatusQueueName = "status_queue"
+	}
+
+	if RmqStatusRoutingKey == "" {
+		RmqStatusRoutingKey = "msg.status.new"
+	}
+	
+	if RmqStatusDlxRoutingKey == "" {
+		RmqStatusDlxRoutingKey = "msg.status.dead"
 	}
 
 	rmqhost := os.Getenv("RMQ_HOST")

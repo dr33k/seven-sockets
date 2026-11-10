@@ -2,10 +2,11 @@ package messaging
 
 import (
 	"time"
+
 	"github.com/google/uuid"
 )
 
-type RmqMsg struct {
+type Msg struct {
 	Typ   int
 	Bytes []byte
 }
@@ -17,9 +18,18 @@ type FileAttachment struct {
 	Size     int64     `json:"size" bson:"size"`
 }
 
-type Payload struct {
-	To          uuid.UUID        `json:"to" bson:"to" validate:"required"`         // Cannot be empty/zero UUID
-	Content     string           `json:"content" bson:"content" validate:"required"` // Cannot be an empty string ""
+type MsgPayload struct {
+	MsgID   uuid.UUID `json:"msg_id" bson:"_id" validate:"required"`
+	To      uuid.UUID `json:"to" bson:"to" validate:"required"`
+	Content string    `json:"content" bson:"content" validate:"required"`
+	Status string	  `json:"status" bson:"status"`
 	Attachments []FileAttachment `json:"attachments,omitempty" bson:"attachments,omitempty" validate:"omitempty"`
-	Timestamp   time.Time        `json:"timestamp" bson:"timestamp" validate:"required"`
+	SentAt      time.Time        `json:"sent_at" bson:"sent_at" validate:"required"`
+	PersistedAt time.Time        `json:"persisted_at" bson:"persisted_at"`
+}
+
+type MsgStatusResponsePayload struct {
+	MsgId  uuid.UUID `json:"msg_id" validate:"required"`
+	Value  string    `json:"value"`
+	SentAt time.Time `json:"timestamp"`
 }

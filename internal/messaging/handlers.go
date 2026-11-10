@@ -28,7 +28,7 @@ var upgrader = websocket.Upgrader{
 var validate = validator.New()
 
 func OpenWS(ctx *gin.Context) {
-	const handlerName = "open-ws-handler"
+	const handler = "open-ws-handler"
 
 	//Retrieve Auth Context
 	authCtx, err := auth.GetAuthCtx(ctx)
@@ -39,15 +39,19 @@ func OpenWS(ctx *gin.Context) {
 	//1. Upgrade HTTP connection to a websocket connection
 	conn, err := upgrader.Upgrade(ctx.Writer, ctx.Request, nil)
 	if err != nil {
-		log.Printf("[%s] Failed to upgrade connection: %v", handlerName, err)
+		log.Printf("[%s] Failed to upgrade connection: %v", handler, err)
 		return
 	}
 	defer conn.Close()
 
-	log.Printf("[%s] New client connected successfully", handlerName)
+	log.Printf("[%s] New client connected successfully", handler)
 
-	msgChan := make(chan RmqMsg, 256)
-	errChan := make(chan RmqMsg, 256)
+	msgChan := make(chan *Msg, 256)
+	errChan := make(chan *Msg, 256)
+
+	// Register client in the global WS connection hub
+	WSHub.Register(authCtx.ID, msgChan, errChan)
+	defer WSHub.Unregister(authCtx.ID) // Clean up on disconnect
 
 	// Create a local context/cancel to coordinate clean shutdown between reader and writer
 	writeCtx, cancel := context.WithCancel(context.Background())
@@ -55,34 +59,34 @@ func OpenWS(ctx *gin.Context) {
 
 	//2. Write loop in spawned goroutine
 	go func() {
-		const workerName = "ws-writer"
+		const worker = "ws-writer"
 		for {
 			select {
 			case <-writeCtx.Done():
-				log.Printf("[%s] WS Writer shutting down", workerName)
+				log.Printf("[%s] WS Writer shutting down", worker)
 				return
 
 			case errMsg, ok := <-errChan:
 				if !ok {
-					log.Printf("[%s] Error channel closed", workerName)
+					log.Printf("[%s] Error channel closed", worker)
 					return
 				}
 
 				err := conn.WriteMessage(errMsg.Typ, errMsg.Bytes)
 				if err != nil {
-					log.Printf("[%s] Failed to write error message from receiver channel to WS: %v", workerName, err)
+					log.Printf("[%s] Failed to write error message from receiver channel to WS: %v", worker, err)
 					return
 				}
 
 			case msg, ok := <-msgChan:
 				if !ok {
-					log.Printf("[%s] Message channel closed", workerName)
+					log.Printf("[%s] Message channel closed", worker)
 					return
 				}
 
 				err := conn.WriteMessage(msg.Typ, msg.Bytes)
 				if err != nil {
-					log.Printf("[%s] Failed to write message from receiver channel to WS: %v", workerName, err)
+					log.Printf("[%s] Failed to write message from receiver channel to WS: %v", worker, err)
 					return
 				}
 			}
@@ -95,50 +99,48 @@ func OpenWS(ctx *gin.Context) {
 		msgTyp, msgBytes, err := conn.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("[%s] Connection error: %v", handlerName, err)
+				log.Printf("[%s] Connection error: %v", handler, err)
 			} else {
-				log.Printf("[%s] Client disconnected", handlerName)
+				log.Printf("[%s] Client disconnected", handler)
 			}
 			break
 		}
 
 		//Unmarshal
-		var payload Payload
+		var payload MsgPayload
 		if err := json.Unmarshal(msgBytes, &payload); err != nil {
-			writeErrorMsgToWS(err, errChan, msgTyp, msgBytes, handlerName)
+			writeErrorMsgToWS(handler, err, errChan, msgTyp, msgBytes)
 			continue
 		}
 
-		now := time.Now()
-		payload.Timestamp = now
-
 		// Validate the struct based on struct tags
 		if err := validate.Struct(&payload); err != nil {
-			writeErrorMsgToWS(err, errChan, msgTyp, msgBytes, handlerName)
+			writeErrorMsgToWS(handler, err, errChan, msgTyp, msgBytes)
 			continue
 		}
 
 		if len(payload.Attachments) > 0 {
-			// Route to Object Storage / File Processing Queue
+			// QUEUE: Object Storage
 			err = rmq.PubEvent("", "", rmq.Event{
 				AcctID:    authCtx.Account.Id.String(),
 				Type:      "OBJ_STORE",
 				Payload:   payload,
-				Timestamp: now.Unix(),
+				Timestamp: time.Now().Unix(),
 			})
 
 		} else {
 			//Validate Empty Content
 			if strings.TrimSpace(payload.Content) == "" {
-				writeErrorMsgToWS(err, errChan, msgTyp, msgBytes, handlerName)
+				writeErrorMsgToWS(handler, fmt.Errorf("Empty content"), errChan, msgTyp, msgBytes)
+				continue
 			}
 
-			// Route straight to Message Persistence Queue
+			// QUEUE: Msg Persistence
 			err = rmq.PubEvent(env.RmqMsgXName, env.RmqMsgRoutingKey, rmq.Event{
 				AcctID:    authCtx.Account.Id.String(),
-				Type:      "MSG_PERSIST",
+				Type:      "MSG_CREATE",
 				Payload:   payload,
-				Timestamp: now.Unix(),
+				Timestamp: time.Now().Unix(),
 			})
 		}
 
@@ -148,7 +150,7 @@ func OpenWS(ctx *gin.Context) {
 			return
 		}
 
-		log.Printf("[%s] Passed message: %s to message channel", handlerName, string(msgBytes))
+		log.Printf("[%s] Passed message: %s to downstream handlers", handler, string(msgBytes))
 	}
 
 	//Cancel writer context
@@ -156,39 +158,51 @@ func OpenWS(ctx *gin.Context) {
 }
 
 func PersistMsg(event *rmq.Event) error {
-	const handlerName = "persist-msg-handler"
+	const handler = "persist-msg-handler"
 
 	if mongodb.DB == nil {
-		return fmt.Errorf("[%s] Uninitialized Mongo DB Pool", handlerName)
+		return fmt.Errorf("[%s] Uninitialized Mongo DB Pool", handler)
 	}
 
 	switch event.Type {
-	case "MSG_PERSIST":
+	case "MSG_CREATE":
 		{
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 
-			payload, err := unmarshalPayloadToBytes(event.Payload)
+			payload, err := castMsgPayload(event.Payload)
 			if err != nil {
-				return fmt.Errorf("[%s] Invalid Message Payload %v", handlerName, event)
+				return fmt.Errorf("[%s] Invalid Message Payload %v", handler, event)
 			}
+
+			payload.Status = "CREATED"
+			payload.PersistedAt = time.Now().UTC()
 
 			collection := mongodb.DB.Collection("messages")
 
 			_, err = collection.InsertOne(ctx, payload)
 			if err != nil {
-				return fmt.Errorf("[%s] Failed to persist message to DB: %w", handlerName, err)
+				return fmt.Errorf("[%s] Failed to persist message to DB: %w", handler, err)
 			}
 
-			log.Printf("[%s] Successfully persisted message to DB", handlerName)
+			log.Printf("[%s] Successfully persisted message to DB", handler)
+
+			// QUEUE: Message Status
+			err = rmq.PubEvent(env.RmqStatusXName, env.RmqStatusRoutingKey, rmq.Event{
+				AcctID:    event.AcctID,
+				Type:      "MSG_CREATED",
+				Payload:   payload,
+				Timestamp: time.Now().Unix(),
+			})
+
 			return nil
 		}
 	default:
-		return fmt.Errorf("[%s] Invalid event type for Message persistence: %s", handlerName, event.Type)
+		return fmt.Errorf("[%s] Invalid event type for Message persistence: %s", handler, event.Type)
 	}
 }
 
-func unmarshalPayloadToBytes(p any) (*Payload, error) {
+func castMsgPayload(p any) (*MsgPayload, error) {
 	// 1. Marshal the generic payload back into JSON bytes
 	payloadBytes, err := json.Marshal(p)
 	if err != nil {
@@ -196,7 +210,7 @@ func unmarshalPayloadToBytes(p any) (*Payload, error) {
 	}
 
 	// 2. Unmarshal into struct
-	var payload Payload
+	var payload MsgPayload
 	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
 		return nil, fmt.Errorf("failed to decode into Payload struct: %w", err)
 	}
@@ -204,11 +218,49 @@ func unmarshalPayloadToBytes(p any) (*Payload, error) {
 	return &payload, nil
 }
 
-func writeErrorMsgToWS(err error, errChan chan RmqMsg, msgTyp int, msgBytes []byte, handlerName string) {
-	log.Printf("[%s] Invalid message format: %v", handlerName, err)
+func writeErrorMsgToWS(handler string, err error, errChan chan *Msg, msgTyp int, msgBytes []byte) {
+	log.Printf("[%s] Invalid message format: %v", handler, err)
 	select {
-	case errChan <- RmqMsg{Typ: msgTyp, Bytes: fmt.Appendf(msgBytes, ": Invalid message format")}:
+	case errChan <- &Msg{Typ: msgTyp, Bytes: fmt.Appendf(msgBytes, ": Invalid message format")}:
 	default:
-		log.Printf("[%s] Error channel output buffer full, dropping message", handlerName)
+		log.Printf("[%s] Error channel output buffer full, dropping message", handler)
+	}
+}
+
+func NotifySender(event *rmq.Event) error {
+	const handler = "notify-sender-handler"
+
+	switch event.Type {
+	case "MSG_CREATED":
+
+		msgPyld, err := castMsgPayload(event.Payload)
+		if err != nil {
+			return fmt.Errorf("[%s] Unable to cast msg payload: %w", handler, err)
+		}
+
+		statusPyld := MsgStatusResponsePayload{
+			MsgId:  msgPyld.MsgID,
+			Value:  msgPyld.Status,
+			SentAt: msgPyld.SentAt,
+		}
+
+		bytes, err := json.Marshal(statusPyld)
+		if err != nil {
+			return fmt.Errorf("[%s] Failed to marshal status payload: %w", handler, err)
+		}
+
+		msg := &Msg{
+			Typ:   1,
+			Bytes: bytes,
+		}
+
+		success := WSHub.PushMsgChan(event.AcctID, msg)
+		if !success {
+			log.Printf("[%s] User offline. Message status update to client will occur upon reconnection", handler)
+		}
+
+		return nil
+	default:
+		return fmt.Errorf("[%s] Invalid event type for Message persistence: %s", handler, event.Type)
 	}
 }

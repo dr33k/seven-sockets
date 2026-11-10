@@ -18,10 +18,10 @@ import (
 )
 
 func LogPresence(c *gin.Context) {
-	const handlerName = "log-presence-handler"
+	const handler = "log-presence-handler"
 
 	if rdsdb.RedisClient == nil {
-		log.Printf("[%s] Uninitialized RedisClient", handlerName)
+		log.Printf("[%s] Uninitialized RedisClient", handler)
 		c.JSON(http.StatusInternalServerError, gin.H{"msg": "There was an error on our end, please contact the administrator"})
 		return
 	}
@@ -39,6 +39,7 @@ func LogPresence(c *gin.Context) {
 	//Publish Presence event if the account has no cache-recorded heartbeat or if it has been a minute since its last heartbeat
 	acctScore := rdsdb.RedisClient.ZScore(rctx, env.RedisPresenceKey, acctIdStr)
 	if acctScore == nil || now-acctScore.Val() > 60 {
+		//QUEUE: Presence Persistence
 		err = rmq.PubEvent(env.RmqPresenceXName, env.RmqPresenceRoutingKey, rmq.Event{
 			Type:      "HEARTBEAT",
 			AcctID:    acctIdStr,
@@ -59,7 +60,7 @@ func LogPresence(c *gin.Context) {
 
 	if err != nil {
 		msg := fmt.Sprintf("Failed to update account %v heartbeat", acctIdStr)
-		log.Printf("[%s] %v: %v", handlerName, msg, err.Error())
+		log.Printf("[%s] %v: %v", handler, msg, err.Error())
 		c.JSON(http.StatusInternalServerError, gin.H{"msg": msg})
 		return
 	}
@@ -69,23 +70,23 @@ func LogPresence(c *gin.Context) {
 	err = rdsdb.RedisClient.ZRemRangeByScore(rctx, env.RedisPresenceKey, "-inf", fmt.Sprintf("%g", staleThreshold)).Err()
 
 	if err != nil {
-		log.Printf("[%s] Failed to prune old heartbeats: %v", handlerName, err.Error())
+		log.Printf("[%s] Failed to prune old heartbeats: %v", handler, err.Error())
 		c.JSON(http.StatusOK, gin.H{"msg": "Failed to prune old heartbeats"})
 		return
 	}
 
-	log.Printf("[%s] Heartbeat from %v with id %v", handlerName, authCtx.Account.Fname, acctIdStr)
+	log.Printf("[%s] Heartbeat from %v with id %v", handler, authCtx.Account.Fname, acctIdStr)
 	c.Status(http.StatusOK)
 }
 
 func PersistPresence(event *rmq.Event) error {
-	const handlerName = "persist-presence-handler"
+	const handler = "persist-presence-handler"
 
 	if pgdb.DB == nil {
-		return fmt.Errorf("[%s] Uninitialized Postgres Pool", handlerName)
+		return fmt.Errorf("[%s] Uninitialized Postgres Pool", handler)
 	}
 
-	log.Printf("[%s] %s presence event from user %s being persisted", handlerName, event.Type, event.AcctID)
+	log.Printf("[%s] %s presence event from user %s being persisted", handler, event.Type, event.AcctID)
 
 	switch event.Type {
 	case "HEARTBEAT":
@@ -100,27 +101,27 @@ func PersistPresence(event *rmq.Event) error {
 			`
 			_, err := pgdb.DB.Exec(ctx, query, event.AcctID, event.Timestamp)
 			if err != nil {
-				log.Printf("[%s] Failed to persist heartbeat to DB: %v", handlerName, err)
+				log.Printf("[%s] Failed to persist heartbeat to DB: %v", handler, err)
 				return err
 			}
 
-			log.Printf("[%s] Successfully persisted heartbeat for user %s", handlerName, event.AcctID)
+			log.Printf("[%s] Successfully persisted heartbeat for user %s", handler, event.AcctID)
 		}
 	default:
 		{
-			log.Printf("[%s] Unknown event type: %s", handlerName, event.Type)
+			log.Printf("[%s] Unknown event type: %s", handler, event.Type)
 		}
 	}
 	return nil
 }
 
 func GetLastSeen(c *gin.Context) {
-	const handlerName = "get-heartbeat"
+	const handler = "get-heartbeat"
 	ctx := c.Request.Context()
 	acctID := c.Param("acct_id")
 
 	if acctID == "" {
-		log.Printf("[%s] Account ID not provided", handlerName)
+		log.Printf("[%s] Account ID not provided", handler)
 		c.JSON(http.StatusBadRequest, gin.H{"msg": "Account ID not provided"})
 		return
 	}
@@ -137,13 +138,13 @@ func GetLastSeen(c *gin.Context) {
 
 	} else if errors.Is(err, redis.Nil) { //Cache miss: Fetch from DB
 
-		log.Printf("[%s] Cache miss for acct %s, falling back to database", handlerName, acctID)
+		log.Printf("[%s] Cache miss for acct %s, falling back to database", handler, acctID)
 
 		query := `select last_seen from acct_presence where acct_id=$1;`
 		row := pgdb.DB.QueryRow(ctx, query, acctID)
 
 		if scanErr := row.Scan(&lastSeenTime); scanErr != nil {
-			log.Printf("[%s] Record for acct %s not found: %v in DB", handlerName, acctID, scanErr)
+			log.Printf("[%s] Record for acct %s not found: %v in DB", handler, acctID, scanErr)
 			c.JSON(http.StatusNotFound, gin.H{"msg": "Presence record not found for this account"})
 			return
 		}
@@ -157,12 +158,12 @@ func GetLastSeen(c *gin.Context) {
 		}).Err()
 
 	} else {
-		log.Printf("[%s] Error fetching last seen score from redis: %v", handlerName, err)
+		log.Printf("[%s] Error fetching last seen score from redis: %v", handler, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"msg": "An error occured on our end, please contact administrator"})
 		return
 	}
 
-	log.Printf("[%s] Successsfully retrieved last seen records for acct %s", handlerName, acctID)
+	log.Printf("[%s] Successsfully retrieved last seen records for acct %s", handler, acctID)
 	c.JSON(http.StatusOK, gin.H{
 		"acct_id":   acctID,
 		"last_seen": lastSeenTime.Format(time.RFC3339),
